@@ -99,7 +99,7 @@ def _replace_page_number_manhwa(url: str, page_number: int) -> str:
 def fetch_chapter_image_urls(chapter_url: str) -> List[str]:
     """
     Extract all image URLs from a paginated chapter using the fast, eager-loading strategy.
-    Supports both manga and manhwa URL formats.
+    Supports manga, manhwa, and vertical longstrip manhwa URL formats.
     """
     if not chapter_url:
         raise ParsingError("Chapter URL is invalid.")
@@ -115,32 +115,50 @@ def fetch_chapter_image_urls(chapter_url: str) -> List[str]:
     try:
         driver.get(chapter_url)
         
-        page_info_element = WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, ".multi_pg_tip.left"))
-        )
-        page_info = page_info_element.text
-        total_pages = int(page_info.split("/")[-1].replace(")", ""))
+        # Check if this is a vertical longstrip manhwa URL (pattern: /chapter/id1/id2/)
+        is_vertical_longstrip = "/chapter/" in chapter_url and len(chapter_url.split("/")) >= 6
         
-        # Check if this is a manhwa URL (contains /uu/ and pg- pattern)
-        is_manhwa_url = "/uu/" in chapter_url and "pg-" in chapter_url
-        
-        for i in range(1, total_pages + 1):
-            if is_manhwa_url:
-                # For manhwa URLs, replace pg-X with pg-Y
-                url = chapter_url if i == 1 else _replace_page_number_manhwa(chapter_url, i)
-            else:
-                # For regular manga URLs, append page number
-                url = chapter_url if i == 1 else f"{chapter_url.rstrip('/')}/{i}/"
-                
-            if driver.current_url != url:
-                driver.get(url)
-
-            img = WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, f"img#page{i}"))
+        if is_vertical_longstrip:
+            # For vertical longstrip manhwa, fetch all images on the single page
+            WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "img"))
             )
-            img_url = img.get_attribute("src")
-            if img_url:
-                img_urls.append(img_url)
+            
+            # Find all image elements on the page
+            img_elements = driver.find_elements(By.CSS_SELECTOR, "img")
+            for img in img_elements:
+                img_url = img.get_attribute("src")
+                # Filter out non-content images (like icons, logos, etc.)
+                if img_url and (img_url.endswith(('.jpg', '.jpeg', '.png', '.webp')) or 'chapter' in img_url):
+                    img_urls.append(img_url)
+        else:
+            # For regular manga/manhwa, use pagination
+            page_info_element = WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, ".multi_pg_tip.left"))
+            )
+            page_info = page_info_element.text
+            total_pages = int(page_info.split("/")[-1].replace(")", ""))
+            
+            # Check if this is a manhwa URL (contains /uu/ and pg- pattern)
+            is_manhwa_url = "/uu/" in chapter_url and "pg-" in chapter_url
+            
+            for i in range(1, total_pages + 1):
+                if is_manhwa_url:
+                    # For manhwa URLs, replace pg-X with pg-Y
+                    url = chapter_url if i == 1 else _replace_page_number_manhwa(chapter_url, i)
+                else:
+                    # For regular manga URLs, append page number
+                    url = chapter_url if i == 1 else f"{chapter_url.rstrip('/')}/{i}/"
+                    
+                if driver.current_url != url:
+                    driver.get(url)
+
+                img = WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, f"img#page{i}"))
+                )
+                img_url = img.get_attribute("src")
+                if img_url:
+                    img_urls.append(img_url)
         
         return img_urls
     finally:
