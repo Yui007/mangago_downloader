@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mangago-downloader"
+version = "1.0.0"
+description = "A modern manga downloader for Mangago.me with both CLI and GUI interfaces"
+readme = "README.md"
+authors = [
+    {name = "Yui007", email = "Yui007@dev.com"}
+]
+license = {text = "MIT"}
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Multimedia :: Graphics",
+    "Topic :: Utilities"
+]
+requires-python = ">=3.11"
+dependencies = [
+    "httpx>=0.27.0",
+    "beautifulsoup4>=4.12.0",
+    "typer>=0.9.0",
+    "rich>=13.0.0",
+    "PyQt6>=6.5.0",
+    "img2pdf>=0.5.0",
+    "Pillow>=10.0.0",
+    "selenium>=4.0.0"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "black>=23.0.0",
+    "flake8>=6.0.0"
+]
+
+[project.scripts]
+mangago-downloader = "cli.main_cli:app"
+
+[project.urls]
+Homepage = "https://github.com/Yui007/mangago_downloader"
+Repository = "https://github.com/Yui007/mangago_downloader"
