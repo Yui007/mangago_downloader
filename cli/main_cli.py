@@ -95,6 +95,10 @@ def main():
             if driver:
                 with console.status("[bold green]Fetching chapter list...", spinner="dots"):
                     chapters = get_chapter_list(driver)
+                # The driver's job is done after getting the chapter list, so close it.
+                close_driver(driver)
+                driver = None # Set to None to prevent double-closing in the finally block
+
                 if not chapters:
                     console.print("[red]No chapters found for this manga.[/red]")
                     continue
