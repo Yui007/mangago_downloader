@@ -9,6 +9,7 @@ from rich.prompt import Prompt, Confirm, IntPrompt
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 import sys
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Add src to path so we can import our modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -17,6 +18,7 @@ from src.search import search_manga, get_manga_details
 from src.downloader import ChapterDownloader, fetch_chapter_image_urls, get_chapter_list, close_driver
 from src.converter import convert_manga_chapters
 from src.models import Manga, Chapter, SearchResult
+from src.utils import sanitize_filename
 
 app = typer.Typer()
 console = Console()
@@ -34,15 +36,15 @@ def main():
         manga: Optional[Manga] = None
         chapters: List[Chapter] = []
         selected_chapters: List[Chapter] = []
-
-        console.print("\n[bold]Search Options:[/bold]")
-        console.print("1. Search for manga by title")
-        console.print("2. Download manga using URL directly")
-        
-        choice = Prompt.ask("[bold green]Choose an option[/bold green]", choices=["1", "2"])
-        
         driver = None
+
         try:
+            console.print("\n[bold]Search Options:[/bold]")
+            console.print("1. Search for manga by title")
+            console.print("2. Download manga using URL directly")
+            
+            choice = Prompt.ask("[bold green]Choose an option[/bold green]", choices=["1", "2"])
+            
             if choice == "1":
                 manga_title = Prompt.ask("[bold green]Enter manga title to search for[/bold green]")
                 if not manga_title:
@@ -121,8 +123,8 @@ def main():
                 try:
                     selected_chapters = chapters[start-1:end]
                 except (ValueError, IndexError):
-                    console.print("[yellow]Invalid chapter index range.[/yellow]")
-                    continue
+                     console.print("[yellow]Invalid chapter index range.[/yellow]")
+                     continue
             elif dl_choice == "3":
                 chapter_idx = IntPrompt.ask("[bold green]Enter chapter index[/bold green]")
                 try:
@@ -138,22 +140,26 @@ def main():
             format_choice = Prompt.ask("[bold green]Select output format[/bold green]", choices=["pdf", "cbz"], default="pdf")
             delete_images = Confirm.ask("[bold green]Delete images after conversion?[/bold green]", default=False)
 
-            # Fetch image URLs sequentially
-            with console.status("[bold green]Fetching all image URLs...[/bold green]"):
-                for chapter in selected_chapters:
-                    console.print(f"Fetching URLs for Chapter {chapter.number}...")
-                    try:
-                        chapter.image_urls = fetch_chapter_image_urls(chapter.url)
-                        console.print(f"  [green]Found {len(chapter.image_urls)} images.[/green]")
-                    except Exception as e:
-                        console.print(f"  [red]Error fetching URLs for Chapter {chapter.number}: {e}[/red]")
+            # Fetch image URLs in parallel
+            with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), BarColumn(), console=console) as progress:
+                task = progress.add_task("[cyan]Fetching image URLs...", total=len(selected_chapters))
+                with ThreadPoolExecutor(max_workers=5) as executor:
+                    future_to_chapter = {executor.submit(fetch_chapter_image_urls, chapter.url): chapter for chapter in selected_chapters}
+                    for future in as_completed(future_to_chapter):
+                        chapter = future_to_chapter[future]
+                        try:
+                            chapter.image_urls = future.result()
+                            console.print(f"  [green]Found {len(chapter.image_urls)} images for Chapter {chapter.number}.[/green]")
+                        except Exception as e:
+                            console.print(f"  [red]Error fetching URLs for Chapter {chapter.number}: {e}[/red]")
+                        progress.update(task, advance=1)
 
             # Download with progress bar
             console.print(f"\n[bold blue]Downloading {len(selected_chapters)} chapters...[/bold blue]")
             with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), BarColumn(), TaskProgressColumn(), console=console) as progress:
                 task = progress.add_task("[cyan]Downloading chapters...", total=len(selected_chapters))
                 
-                downloader = ChapterDownloader(max_workers=5)
+                downloader = ChapterDownloader(max_workers=10) # Increased workers for I/O bound tasks
                 results = downloader.download_chapters(manga, selected_chapters)
                 downloader.close()
                 
@@ -172,7 +178,8 @@ def main():
             if format_choice in ["pdf", "cbz"] and successful:
                 console.print(f"\n[bold blue]Converting to {format_choice.upper()}...[/bold blue]")
                 with console.status("[bold green]Converting chapters...", spinner="dots"):
-                    created_files = convert_manga_chapters(os.path.join("downloads", manga.title), format_choice, delete_images)
+                    manga_dir = os.path.join("downloads", sanitize_filename(manga.title))
+                    created_files = convert_manga_chapters(manga_dir, format_choice, delete_images)
                     console.print(f"[bold green]Successfully converted {len(created_files)} chapters.[/bold green]")
 
         except Exception as e:
