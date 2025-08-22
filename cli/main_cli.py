@@ -141,8 +141,11 @@ def main():
                 console.print("[yellow]No chapters selected for download.[/yellow]")
                 continue
             
-            format_choice = Prompt.ask("[bold green]Select output format[/bold green]", choices=["pdf", "cbz"], default="pdf")
-            delete_images = Confirm.ask("[bold green]Delete images after conversion?[/bold green]", default=False)
+            format_choice = Prompt.ask("[bold green]Select output format[/bold green]", choices=["pdf", "cbz", "none"], default="pdf")
+            
+            delete_images = False
+            if format_choice != "none":
+                delete_images = Confirm.ask("[bold green]Delete images after conversion?[/bold green]", default=False)
 
             # Fetch image URLs in parallel
             with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), BarColumn(), console=console) as progress:
@@ -185,6 +188,8 @@ def main():
                     manga_dir = os.path.join("downloads", sanitize_filename(manga.title))
                     created_files = convert_manga_chapters(manga_dir, format_choice, delete_images)
                     console.print(f"[bold green]Successfully converted {len(created_files)} chapters.[/bold green]")
+            elif format_choice == "none":
+                console.print("\n[bold blue]Skipping conversion.[/bold blue]")
 
         except Exception as e:
             console.print(f"[bold red]An unexpected error occurred: {e}[/bold red]")
