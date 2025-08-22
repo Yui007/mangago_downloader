@@ -80,9 +80,26 @@ class ChapterDownloader:
         self.session.close()
 
 
+def _replace_page_number_manhwa(url: str, page_number: int) -> str:
+    """
+    Replace the page number in a manhwa URL.
+    
+    Args:
+        url (str): The original manhwa URL
+        page_number (int): The new page number
+        
+    Returns:
+        str: The URL with the updated page number
+    """
+    import re
+    # Replace pg-X with pg-page_number
+    return re.sub(r'pg-\d+', f'pg-{page_number}', url)
+
+
 def fetch_chapter_image_urls(chapter_url: str) -> List[str]:
     """
     Extract all image URLs from a paginated chapter using the fast, eager-loading strategy.
+    Supports both manga and manhwa URL formats.
     """
     if not chapter_url:
         raise ParsingError("Chapter URL is invalid.")
@@ -104,8 +121,17 @@ def fetch_chapter_image_urls(chapter_url: str) -> List[str]:
         page_info = page_info_element.text
         total_pages = int(page_info.split("/")[-1].replace(")", ""))
         
+        # Check if this is a manhwa URL (contains /uu/ and pg- pattern)
+        is_manhwa_url = "/uu/" in chapter_url and "pg-" in chapter_url
+        
         for i in range(1, total_pages + 1):
-            url = chapter_url if i == 1 else f"{chapter_url.rstrip('/')}/{i}/"
+            if is_manhwa_url:
+                # For manhwa URLs, replace pg-X with pg-Y
+                url = chapter_url if i == 1 else _replace_page_number_manhwa(chapter_url, i)
+            else:
+                # For regular manga URLs, append page number
+                url = chapter_url if i == 1 else f"{chapter_url.rstrip('/')}/{i}/"
+                
             if driver.current_url != url:
                 driver.get(url)
 
@@ -124,7 +150,25 @@ def fetch_chapter_image_urls(chapter_url: str) -> List[str]:
 def get_chapter_list(driver: webdriver.Chrome) -> List[Chapter]:
     """
     Get the list of chapters for a given manga from an existing driver instance.
+    Automatically clicks 'show all chapters' button if present.
     """
+    # Check if there's a "show all chapters" button and click it
+    try:
+        # Look for the "show all chapters" button
+        show_all_button = WebDriverWait(driver, 5).until(
+            EC.element_to_be_clickable((By.XPATH, "//a[contains(@onclick, 'showAllChapters()')]"))
+        )
+        # Click the button to show all chapters
+        show_all_button.click()
+        # Wait a bit for the page to update
+        time.sleep(2)
+    except TimeoutException:
+        # No "show all chapters" button found, proceed with existing chapters
+        pass
+    except Exception as e:
+        # Some other error occurred, but we'll continue anyway
+        pass
+    
     soup = BeautifulSoup(driver.page_source, 'html.parser')
     chapter_table = soup.find('table', class_='listing')
     if not isinstance(chapter_table, Tag):
