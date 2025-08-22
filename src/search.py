@@ -10,7 +10,8 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, WebDriverException
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse # Added urlparse
+from src.downloader import init_driver # Import init_driver
 
 from .models import Manga, SearchResult
 from .utils import SessionManager, NetworkError, ParsingError
@@ -95,21 +96,41 @@ def get_manga_details(manga_url: str) -> Tuple[Manga, webdriver.Chrome]:
     """
     Get detailed manga info using the 'eager' page load strategy.
     The WebDriver instance is returned for reuse.
+    Handles different domains.
     """
-    options = webdriver.ChromeOptions()
-    # options.add_argument("--headless=new")
-    options.page_load_strategy = "eager"
+    parsed_url = urlparse(manga_url)
+    domain = parsed_url.netloc
 
-    driver = webdriver.Chrome(options=options)
-    driver.set_page_load_timeout(10)
-    
-    driver.get(manga_url)
-    WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "page")))
-    
-    soup = BeautifulSoup(driver.page_source, 'html.parser')
-    manga = _parse_manga_details(soup, manga_url)
-    
-    return manga, driver
+    driver = None
+    try:
+        if domain in ["www.youhim.me", "www.mangago.zone"]:
+            driver = init_driver() # Use the common init_driver
+        else:
+            options = webdriver.ChromeOptions()
+            # options.add_argument("--headless=new")
+            options.page_load_strategy = "eager"
+            driver = webdriver.Chrome(options=options)
+            driver.set_page_load_timeout(10)
+        
+        driver.get(manga_url)
+        # For mangago.me, wait for element with ID "page". For other domains, this might be different.
+        # Given the user's focus on chapter URLs, the manga detail page might not have a simple "page" ID.
+        # A more general wait might be for the body or a common container.
+        # For now, keep the existing wait for mangago.me, and rely on general page load for others.
+        if domain == "www.mangago.me":
+            WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "page")))
+        else:
+            # For other domains, just wait for the page to be loaded enough
+            WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+        
+        soup = BeautifulSoup(driver.page_source, 'html.parser')
+        manga = _parse_manga_details(soup, manga_url)
+        
+        return manga, driver
+    except Exception as e:
+        if driver:
+            driver.quit()
+        raise ParsingError(f"Failed to get manga details for {manga_url}: {e}")
 
 
 def _parse_manga_details(soup: BeautifulSoup, manga_url: str) -> Manga:

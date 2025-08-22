@@ -14,6 +14,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 # Add src to path so we can import our modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
+from urllib.parse import urlparse # Add this import
 from src.search import search_manga, get_manga_details
 from src.downloader import ChapterDownloader, fetch_chapter_image_urls, get_chapter_list, close_driver
 from src.converter import convert_manga_chapters
@@ -103,6 +104,7 @@ def main():
                 if not manga_url:
                     console.print("[red]Please enter a valid manga URL.[/red]")
                     continue
+
                 with console.status("[bold green]Fetching manga details...", spinner="dots"):
                     manga, driver = get_manga_details(manga_url)
 
