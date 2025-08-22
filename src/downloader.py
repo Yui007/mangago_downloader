@@ -5,7 +5,6 @@ import os
 import re
 import threading
 import time
-import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import List, Optional, Tuple, Union
@@ -22,15 +21,10 @@ from selenium.common.exceptions import TimeoutException, WebDriverException
 from .models import Chapter, Manga, DownloadResult
 from .utils import SessionManager, NetworkError, ParsingError, DownloadError, create_directory, sanitize_filename
 
-# Configure logger for this module
-logger = logging.getLogger(__name__)
-
 
 class ChapterDownloader:
     """
     Handles downloading of manga chapters with threading support.
-    This class is now only responsible for downloading files from URLs,
-    making it safe for multi-threading. It does not handle any browser automation.
     """
     
     def __init__(self, max_workers: int = 5, download_dir: str = "downloads"):
@@ -40,8 +34,7 @@ class ChapterDownloader:
         
     def download_chapter(self, manga: Manga, chapter: Chapter) -> DownloadResult:
         if not chapter.image_urls:
-            error_msg = f"No image URLs found for chapter {chapter.number}."
-            return DownloadResult(chapter=chapter, success=False, error_message=error_msg)
+            return DownloadResult(chapter=chapter, success=False, error_message="No image URLs found.")
 
         manga_dir = os.path.join(self.download_dir, sanitize_filename(manga.title))
         create_directory(manga_dir)
@@ -75,14 +68,12 @@ class ChapterDownloader:
         try:
             if os.path.exists(image_path):
                 return True
-            # Use standard requests via session manager for downloading
             response = self.session.get(image_url, headers={"Referer": "https://www.mangago.me/"}, timeout=20)
             response.raise_for_status()
             with open(image_path, 'wb') as f:
                 f.write(response.content)
             return True
-        except Exception as e:
-            logger.error(f"Failed to download image {image_url}: {e}")
+        except Exception:
             return False
     
     def close(self):
@@ -101,15 +92,16 @@ def fetch_chapter_image_urls(chapter_url: str) -> List[str]:
     options.page_load_strategy = "eager"
     
     driver = webdriver.Chrome(options=options)
-    driver.set_page_load_timeout(10) # Don't wait forever
+    driver.set_page_load_timeout(10)
 
     img_urls = []
     try:
         driver.get(chapter_url)
         
-        page_info = WebDriverWait(driver, 10).until(
+        page_info_element = WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, ".multi_pg_tip.left"))
-        ).text
+        )
+        page_info = page_info_element.text
         total_pages = int(page_info.split("/")[-1].replace(")", ""))
         
         for i in range(1, total_pages + 1):
