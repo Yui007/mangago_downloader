@@ -9,14 +9,27 @@ from rich.prompt import Prompt, Confirm, IntPrompt
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 import sys
 import os
+import logging
+from datetime import datetime
 
 # Add src to path so we can import our modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from src.search import search_manga, get_manga_details
-from src.downloader import download_manga_chapters, get_chapter_list, close_driver
+from src.downloader import ChapterDownloader, fetch_chapter_image_urls, get_chapter_list, close_driver
 from src.converter import convert_manga_chapters
 from src.models import Manga, Chapter, SearchResult
+
+# Configure logging
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('mangago_downloader.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
 app = typer.Typer()
 console = Console()
@@ -70,7 +83,7 @@ def main():
             
             for result in search_results:
                 genres = ", ".join(result.manga.genres) if isinstance(result.manga.genres, list) else result.manga.genres or "N/A"
-                chapters = str(result.manga.total_chapters) if result.manga.total_chapters else "N/A"
+                chapters_count = str(result.manga.total_chapters) if result.manga.total_chapters else "N/A"
                 author = result.manga.author if result.manga.author else "N/A"
                 
                 table.add_row(
@@ -78,7 +91,7 @@ def main():
                     result.manga.title,
                     author,
                     genres,
-                    chapters
+                    chapters_count
                 )
             
             console.print(table)
@@ -100,8 +113,8 @@ def main():
                     manga, driver = get_manga_details(selected_result.manga.url)
                 except Exception as e:
                     console.print(f"[yellow]Warning: Could not fetch detailed manga info: {e}[/yellow]")
-                    manga = selected_result.manga  # Use basic info
-                    driver = None # No driver to close
+                    manga = selected_result.manga
+                    driver = None
         else:
             # Use URL directly
             manga_url = Prompt.ask("[bold green]Enter manga URL[/bold green]")
@@ -121,7 +134,7 @@ def main():
         if driver:
             with console.status("[bold green]Fetching chapter list...", spinner="dots"):
                 try:
-                    chapters = get_chapter_list(driver) # Pass the driver
+                    chapters = get_chapter_list(driver)
                     if not chapters:
                         console.print("[red]No chapters found for this manga.[/red]")
                         continue
@@ -159,24 +172,26 @@ def main():
         
         selected_chapters = []
         if choice == "1":
-            # Download all chapters
             selected_chapters = chapters
         elif choice == "2":
-            # Download a range of chapters
-            start = IntPrompt.ask("[bold green]Enter start chapter number[/bold green]")
-            end = IntPrompt.ask("[bold green]Enter end chapter number[/bold green]")
-            
-            # Filter chapters in range
-            selected_chapters = [ch for ch in chapters if start <= ch.number <= end]
+            start = IntPrompt.ask("[bold green]Enter start chapter index[/bold green]")
+            end = IntPrompt.ask("[bold green]Enter end chapter index[/bold green]")
+            try:
+                # Adjust for 1-based indexing from the user
+                selected_chapters = chapters[start-1:end]
+            except (ValueError, IndexError):
+                 console.print("[yellow]Invalid chapter index range.[/yellow]")
+                 continue
             if not selected_chapters:
                 console.print("[yellow]No chapters found in the specified range.[/yellow]")
                 continue
         elif choice == "3":
-            # Download a single chapter
-            chapter_num = IntPrompt.ask("[bold green]Enter chapter number[/bold green]")
-            selected_chapters = [ch for ch in chapters if ch.number == chapter_num]
-            if not selected_chapters:
-                console.print("[yellow]Chapter not found.[/yellow]")
+            chapter_idx = IntPrompt.ask("[bold green]Enter chapter index[/bold green]")
+            try:
+                 # Adjust for 1-based indexing from the user
+                selected_chapters = [chapters[chapter_idx-1]]
+            except (ValueError, IndexError):
+                console.print("[yellow]Invalid chapter index.[/yellow]")
                 continue
         
         # Step 6: Select output format
@@ -192,9 +207,19 @@ def main():
             default=False
         )
         
-        # Step 8: Download chapters with progress bar
-        console.print(f"\n[bold blue]Downloading {len(selected_chapters)} chapters...[/bold blue]")
+        # Step 8: Pre-fetch all image URLs sequentially to avoid race conditions
+        with console.status("[bold green]Fetching all image URLs...[/bold green]"):
+            for chapter in selected_chapters:
+                console.print(f"Fetching URLs for Chapter {chapter.number}...")
+                try:
+                    chapter.image_urls = fetch_chapter_image_urls(chapter.url)
+                    console.print(f"  [green]Found {len(chapter.image_urls)} images.[/green]")
+                except Exception as e:
+                    console.print(f"  [red]Error fetching URLs for Chapter {chapter.number}: {e}[/red]")
+                    chapter.image_urls = []
         
+        # Step 9: Now, download the chapters with the pre-fetched URLs using a progress bar
+        console.print(f"\n[bold blue]Downloading {len(selected_chapters)} chapters...[/bold blue]")
         try:
             with Progress(
                 SpinnerColumn(),
@@ -203,33 +228,26 @@ def main():
                 TaskProgressColumn(),
                 console=console
             ) as progress:
-                # Create a task for overall progress
-                overall_task = progress.add_task(
-                    "[cyan]Downloading chapters...",
-                    total=len(selected_chapters)
-                )
+                overall_task = progress.add_task("[cyan]Downloading chapters...", total=len(selected_chapters))
                 
-                # Download chapters
-                results = download_manga_chapters(
-                    manga=manga,
-                    chapters=selected_chapters,
-                    max_workers=5,
-                    download_dir="downloads"
-                )
+                downloader = ChapterDownloader(max_workers=5, download_dir="downloads")
+                results = downloader.download_chapters(manga, selected_chapters)
+                downloader.close()
                 
-                # Update progress
                 completed = sum(1 for r in results if r.success)
                 progress.update(overall_task, completed=completed)
                 
-                # Show results
                 successful = [r for r in results if r.success]
                 failed = [r for r in results if not r.success]
                 
                 console.print(f"\n[bold green]Successfully downloaded {len(successful)} chapters[/bold green]")
                 if failed:
                     console.print(f"[yellow]Failed to download {len(failed)} chapters[/yellow]")
+                    for failed_result in failed:
+                        console.print(f"[red]  - Chapter {failed_result.chapter.number}: {failed_result.error_message}[/red]")
         
         except Exception as e:
+            logger.exception(f"Exception during download: {e}")
             console.print(f"[red]Error during download: {e}[/red]")
             continue
         
