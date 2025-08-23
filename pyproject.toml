@@ -43,6 +43,7 @@ dev = [
 
 [project.scripts]
 mangago-downloader = "cli.main_cli:app"
+mangago-downloader-gui = "gui.main_gui:main"
 
 [project.urls]
 Homepage = "https://github.com/Yui007/mangago_downloader"
