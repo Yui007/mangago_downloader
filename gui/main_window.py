@@ -548,9 +548,10 @@ class MainWindow(QMainWindow):
         # Start download
         max_workers = config.get("max_workers", 5)
         self.download_controller.download_chapters(
-            self.current_manga, 
-            self.current_chapters, 
-            max_workers
+            self.current_manga,
+            self.current_chapters,
+            max_workers,
+            config
         )
     
     def _on_download_started(self):

@@ -108,16 +108,19 @@ class DownloadWorker(QThread):
     progress_updated = pyqtSignal(int)  # Progress value
     status_updated = pyqtSignal(str)  # Status message
     
-    def __init__(self, manga: Manga, chapters: List[Chapter], max_workers: int = 5):
+    def __init__(self, manga: Manga, chapters: List[Chapter], max_workers: int = 5, download_config: Optional[dict] = None):
         super().__init__()
         self.manga = manga
         self.chapters = chapters
         self.max_workers = max_workers
+        self.download_config = download_config or {}
         self.downloader = None
     
     def run(self):
         try:
-            self.downloader = ChapterDownloader(max_workers=self.max_workers)
+            # Get download directory from config, with fallback to default
+            download_dir = self.download_config.get("download_location", "downloads")
+            self.downloader = ChapterDownloader(max_workers=self.max_workers, download_dir=download_dir)
             
             for i, chapter in enumerate(self.chapters):
                 self.status_updated.emit(f"Downloading Chapter {chapter.number}...")
@@ -241,7 +244,7 @@ class DownloadController(QObject):
         self.download_worker = None
         self.results = []
     
-    def download_chapters(self, manga: Manga, chapters: List[Chapter], max_workers: int = 5):
+    def download_chapters(self, manga: Manga, chapters: List[Chapter], max_workers: int = 5, download_config: Optional[dict] = None):
         """Download selected chapters."""
         if (self.urls_worker and self.urls_worker.isRunning()) or \
            (self.download_worker and self.download_worker.isRunning()):
@@ -251,9 +254,9 @@ class DownloadController(QObject):
         self.download_started.emit()
         
         # First, fetch image URLs for all chapters
-        self._fetch_image_urls(chapters, manga, max_workers)
+        self._fetch_image_urls(chapters, manga, max_workers, download_config)
     
-    def _fetch_image_urls(self, chapters: List[Chapter], manga: Manga, max_workers: int):
+    def _fetch_image_urls(self, chapters: List[Chapter], manga: Manga, max_workers: int, download_config: Optional[dict] = None):
         """Fetch image URLs for chapters."""
         self.status_updated.emit("Fetching image URLs...")
         self.urls_worker = ImageUrlsWorker(chapters)
@@ -263,7 +266,7 @@ class DownloadController(QObject):
             lambda current: self.urls_progress.emit(current, len(chapters))
         )
         self.urls_worker.finished.connect(
-            lambda: self._start_downloads(manga, chapters, max_workers)
+            lambda: self._start_downloads(manga, chapters, max_workers, download_config)
         )
         self.urls_worker.start()
     
@@ -275,7 +278,7 @@ class DownloadController(QObject):
         """Handle failed URL fetching."""
         self.status_updated.emit(f"Failed to get URLs for Chapter {chapter.number}: {error}")
     
-    def _start_downloads(self, manga: Manga, chapters: List[Chapter], max_workers: int):
+    def _start_downloads(self, manga: Manga, chapters: List[Chapter], max_workers: int, download_config: Optional[dict] = None):
         """Start the actual downloads."""
         self.urls_completed.emit()
         self.status_updated.emit("Starting downloads...")
@@ -287,7 +290,7 @@ class DownloadController(QObject):
             self.operation_failed.emit("No valid chapters to download")
             return
         
-        self.download_worker = DownloadWorker(manga, valid_chapters, max_workers)
+        self.download_worker = DownloadWorker(manga, valid_chapters, max_workers, download_config)
         self.download_worker.download_completed.connect(self._on_download_completed)
         self.download_worker.download_failed.connect(self._on_download_failed)
         self.download_worker.progress_updated.connect(
