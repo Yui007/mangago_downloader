@@ -6,44 +6,16 @@ import sys
 import os
 from typing import List, Optional
 from PyQt6.QtCore import (Qt, pyqtSignal, QPropertyAnimation, QEasingCurve,
-                          QRect, QTimer, QSize, QEvent, QRunnable,
-                          QObject, pyqtSlot, QThreadPool)
+                          QRect, QTimer, QSize, QEvent, QThreadPool)
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QScrollArea, QStackedWidget,
                              QLabel, QPushButton, QFrame, QGridLayout, QSizePolicy,
                              QSpacerItem, QButtonGroup)
 from PyQt6.QtGui import QPixmap, QPainter, QPainterPath, QBrush, QColor, QFont, QMouseEvent, QEnterEvent
-import httpx
 
 # Add src to path to import existing modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from src.models import SearchResult, Manga
-from src.utils import get_headers
-
-
-class WorkerSignals(QObject):
-    """Defines signals available from a running worker thread."""
-    finished = pyqtSignal()
-    error = pyqtSignal(tuple)
-    result = pyqtSignal(object)
-
-class ImageDownloader(QRunnable):
-    """Worker thread for downloading images."""
-    def __init__(self, url: str):
-        super().__init__()
-        self.url = url
-        self.signals = WorkerSignals()
-
-    @pyqtSlot()
-    def run(self):
-        try:
-            with httpx.Client(headers=get_headers()) as client:
-                response = client.get(self.url, timeout=20)
-                response.raise_for_status()
-                self.signals.result.emit(response.content)
-        except Exception as e:
-            self.signals.error.emit((e,))
-        finally:
-            self.signals.finished.emit()
+from .workers import ImageDownloader
 
 
 class MangaCard(QFrame):

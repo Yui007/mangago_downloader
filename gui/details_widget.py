@@ -5,8 +5,8 @@ Modern details widget for displaying manga information and interactive chapter s
 import sys
 import os
 from typing import List, Optional, Set
-from PyQt6.QtCore import Qt, pyqtSignal, QTimer
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QScrollArea, 
+from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QThreadPool
+from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QScrollArea,
                              QLabel, QPushButton, QFrame, QTableWidget, QTableWidgetItem,
                              QHeaderView, QCheckBox, QSpinBox, QGroupBox, QGridLayout,
                              QSplitter, QTextEdit, QButtonGroup)
@@ -15,6 +15,7 @@ from PyQt6.QtGui import QPixmap, QFont
 # Add src to path to import existing modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from src.models import Manga, Chapter
+from .workers import ImageDownloader
 
 
 class MangaInfoWidget(QWidget):
@@ -22,6 +23,7 @@ class MangaInfoWidget(QWidget):
     
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.threadpool = QThreadPool()
         self._setup_ui()
     
     def _setup_ui(self):
@@ -126,6 +128,11 @@ class MangaInfoWidget(QWidget):
         else:
             self.author_label.setText("by Unknown Author")
         
+        if manga.summary:
+            self.summary_text.setPlainText(manga.summary)
+        else:
+            self.summary_text.setPlainText("No summary available.")
+
         # Update chapters count
         if manga.total_chapters:
             self.chapters_count_value.setText(str(manga.total_chapters))
@@ -140,7 +147,38 @@ class MangaInfoWidget(QWidget):
         
         # Update status (placeholder for now)
         self.status_value.setText("Ongoing")  # This could be enhanced with actual status data
+
+        # Load cover image
+        self._load_cover_image(manga.cover_image_url)
     
+    def _load_cover_image(self, url: Optional[str]):
+        """Load cover image from URL."""
+        # Reset to placeholder
+        self.cover_label.setText("📚\nManga\nCover")
+        self.cover_label.setStyleSheet("""
+            QLabel {
+                background: rgba(255, 255, 255, 0.1);
+                border: 2px dashed rgba(255, 255, 255, 0.2);
+                border-radius: 12px;
+            }
+        """)
+
+        if url:
+            downloader = ImageDownloader(url)
+            downloader.signals.result.connect(self._set_cover_image)
+            self.threadpool.start(downloader)
+
+    def _set_cover_image(self, image_data: bytes):
+        """Set the cover image from downloaded data."""
+        pixmap = QPixmap()
+        pixmap.loadFromData(image_data)
+        self.cover_label.setPixmap(pixmap.scaled(
+            self.cover_label.size(),
+            Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+            Qt.TransformationMode.SmoothTransformation
+        ))
+        self.cover_label.setStyleSheet("border: 1px solid #4A5568; border-radius: 12px;")
+
     def clear(self):
         """Clear manga information."""
         self.title_label.setText("Select a manga to view details")
@@ -148,6 +186,15 @@ class MangaInfoWidget(QWidget):
         self.chapters_count_value.setText("0")
         self.genres_value.setText("N/A")
         self.status_value.setText("Unknown")
+        self.summary_text.setPlainText("Summary will be available in future updates.")
+        self.cover_label.setText("📚\nManga\nCover")
+        self.cover_label.setStyleSheet("""
+            QLabel {
+                background: rgba(255, 255, 255, 0.1);
+                border: 2px dashed rgba(255, 255, 255, 0.2);
+                border-radius: 12px;
+            }
+        """)
 
 
 class ChapterSelectionWidget(QWidget):
@@ -239,9 +286,10 @@ class ChapterSelectionWidget(QWidget):
         
         # Table styling
         header = self.chapters_table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        if header:
+            header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+            header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         
         self.chapters_table.setColumnWidth(0, 80)
         self.chapters_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
@@ -279,7 +327,8 @@ class ChapterSelectionWidget(QWidget):
         # Initially hide the table and show empty state
         self.chapters_table.setVisible(False)
         layout = self.layout()
-        layout.addWidget(self.empty_widget)
+        if layout:
+            layout.addWidget(self.empty_widget)
     
     def update_chapters(self, chapters: List[Chapter]):
         """Update the chapters list."""
@@ -340,23 +389,23 @@ class ChapterSelectionWidget(QWidget):
     def _select_all(self):
         """Select all chapters."""
         for i in range(len(self.chapters)):
-            checkbox = self.chapters_table.cellWidget(i, 0)
-            if checkbox:
-                checkbox.setChecked(True)
+            widget = self.chapters_table.cellWidget(i, 0)
+            if isinstance(widget, QCheckBox):
+                widget.setChecked(True)
     
     def _select_none(self):
         """Deselect all chapters."""
         for i in range(len(self.chapters)):
-            checkbox = self.chapters_table.cellWidget(i, 0)
-            if checkbox:
-                checkbox.setChecked(False)
+            widget = self.chapters_table.cellWidget(i, 0)
+            if isinstance(widget, QCheckBox):
+                widget.setChecked(False)
     
     def _invert_selection(self):
         """Invert current selection."""
         for i in range(len(self.chapters)):
-            checkbox = self.chapters_table.cellWidget(i, 0)
-            if checkbox:
-                checkbox.setChecked(not checkbox.isChecked())
+            widget = self.chapters_table.cellWidget(i, 0)
+            if isinstance(widget, QCheckBox):
+                widget.setChecked(not widget.isChecked())
     
     def _select_range(self):
         """Select range of chapters."""
@@ -364,9 +413,9 @@ class ChapterSelectionWidget(QWidget):
         end = self.range_to_spin.value()  # End is exclusive
         
         for i in range(len(self.chapters)):
-            checkbox = self.chapters_table.cellWidget(i, 0)
-            if checkbox:
-                checkbox.setChecked(start <= i < end)
+            widget = self.chapters_table.cellWidget(i, 0)
+            if isinstance(widget, QCheckBox):
+                widget.setChecked(start <= i < end)
     
     def _update_selection_count(self):
         """Update selection count display."""

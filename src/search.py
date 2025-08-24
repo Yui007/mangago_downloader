@@ -147,18 +147,47 @@ def _parse_manga_details(soup: BeautifulSoup, manga_url: str) -> Manga:
     title = (title_elem.get_text(strip=True) if (title_elem := soup.find('h1')) else "Unknown Title")
     manga = Manga(title=title, url=manga_url)
 
-    author_elem = soup.find('span', class_='author') or soup.find('div', class_='author-info')
-    if author_elem:
-        manga.author = author_elem.get_text(strip=True)
-    
-    genre_container = soup.find('div', class_='genres') or soup.find('div', class_='genre-list')
-    if isinstance(genre_container, Tag):
-        manga.genres = [elem.get_text(strip=True) for elem in genre_container.find_all('a')]
+    # Cover Image
+    cover_div = soup.select_one("div.left.cover")
+    if isinstance(cover_div, Tag):
+        cover_elem = cover_div.find("img")
+        if isinstance(cover_elem, Tag) and cover_elem.get("src"):
+            src = cover_elem.get("src")
+            if isinstance(src, str):
+                manga.cover_image_url = src
 
-    cover_elem = soup.find('img', class_='cover') or soup.find('img', {'id': 'cover'})
-    if isinstance(cover_elem, Tag):
-        src = cover_elem.get('src')
-        if src and isinstance(src, str):
-            manga.cover_image_url = src
+    # Details table
+    details_table = soup.select_one("div.manga_right table")
+    if isinstance(details_table, Tag):
+        # Find all table rows and process them
+        rows = details_table.find_all("tr")
+        for row in rows:
+            label_tag = row.find("label")
+            if not isinstance(label_tag, Tag):
+                continue
+
+            label_text = label_tag.get_text(strip=True)
+            
+            # Author
+            if "Author:" in label_text:
+                author_link = row.find("a")
+                if isinstance(author_link, Tag):
+                    manga.author = author_link.get_text(strip=True)
+            
+            # Genres
+            elif "Genre(s):" in label_text:
+                genre_links = row.find_all("a")
+                if genre_links:
+                    manga.genres = [link.get_text(strip=True) for link in genre_links]
     
+    # Summary
+    summary_div = soup.select_one("div.manga_summary")
+    if isinstance(summary_div, Tag):
+        # Remove the "Expand" button text
+        expand_button = summary_div.find("div", class_="expand")
+        if isinstance(expand_button, Tag):
+            expand_button.decompose()
+        
+        manga.summary = summary_div.get_text(strip=True)
+
     return manga

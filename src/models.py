@@ -16,6 +16,7 @@ class Manga:
     genres: List[str] = field(default_factory=list)
     total_chapters: Optional[int] = None
     cover_image_url: Optional[str] = None
+    summary: Optional[str] = None
     
     def __str__(self) -> str:
         """
