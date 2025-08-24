@@ -5,11 +5,11 @@ Modern results widget for displaying search results in beautiful card layout.
 import sys
 import os
 from typing import List, Optional
-from PyQt6.QtCore import Qt, pyqtSignal, QPropertyAnimation, QEasingCurve, QRect, QTimer, QSize
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QScrollArea, 
+from PyQt6.QtCore import Qt, pyqtSignal, QPropertyAnimation, QEasingCurve, QRect, QTimer, QSize, QEvent
+from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QScrollArea, QStackedWidget,
                              QLabel, QPushButton, QFrame, QGridLayout, QSizePolicy,
                              QSpacerItem, QButtonGroup)
-from PyQt6.QtGui import QPixmap, QPainter, QPainterPath, QBrush, QColor, QFont
+from PyQt6.QtGui import QPixmap, QPainter, QPainterPath, QBrush, QColor, QFont, QMouseEvent, QEnterEvent
 
 # Add src to path to import existing modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -114,29 +114,27 @@ class MangaCard(QFrame):
         self.shadow_animation.setDuration(200)
         self.shadow_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
     
-    def enterEvent(self, event):
+    def enterEvent(self, event: QEnterEvent | None) -> None:
         """Handle mouse enter for hover effect."""
-        self._is_hovered = True
-        self.setStyleSheet("""
-            MangaCard {
-                background: rgba(255, 255, 255, 0.08);
-                border: 1px solid rgba(139, 92, 246, 0.3);
-                transform: translateY(-2px);
-            }
-        """)
         super().enterEvent(event)
-    
-    def leaveEvent(self, event):
+        self.setProperty("class", "card-hover")
+        style = self.style()
+        if style:
+            style.polish(self)
+
+    def leaveEvent(self, a0: QEvent | None) -> None:
         """Handle mouse leave for hover effect."""
-        self._is_hovered = False
-        self.setStyleSheet("")
-        super().leaveEvent(event)
-    
-    def mousePressEvent(self, event):
+        super().leaveEvent(a0)
+        self.setProperty("class", "card")
+        style = self.style()
+        if style:
+            style.polish(self)
+
+    def mousePressEvent(self, a0: QMouseEvent | None) -> None:
         """Handle mouse press for click effect."""
-        if event.button() == Qt.MouseButton.LeftButton:
+        if a0 and a0.button() == Qt.MouseButton.LeftButton:
             self.clicked.emit(self.search_result)
-        super().mousePressEvent(event)
+        super().mousePressEvent(a0)
 
 
 class PaginationWidget(QWidget):
@@ -266,13 +264,25 @@ class ResultsWidget(QWidget):
         self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         
-        # Results container
+        # Use a stacked widget to manage different states (results, empty, loading)
+        self.view_stack = QStackedWidget()
+
+        # 1. Results container
         self.results_container = QWidget()
         self.results_layout = QGridLayout(self.results_container)
         self.results_layout.setSpacing(16)
         self.results_layout.setContentsMargins(8, 8, 8, 8)
+        self.view_stack.addWidget(self.results_container)
+
+        # 2. Empty state widget
+        self._setup_empty_state()
+        self.view_stack.addWidget(self.empty_widget)
+
+        # 3. Loading state widget
+        self._setup_loading_state()
+        self.view_stack.addWidget(self.loading_widget)
         
-        self.scroll_area.setWidget(self.results_container)
+        self.scroll_area.setWidget(self.view_stack)
         layout.addWidget(self.scroll_area, 1)
         
         # Pagination
@@ -280,9 +290,9 @@ class ResultsWidget(QWidget):
         self.pagination.page_changed.connect(self.page_changed.emit)
         layout.addWidget(self.pagination)
         
-        # Empty state
-        self._setup_empty_state()
-        
+        # Set initial view to empty
+        self.view_stack.setCurrentWidget(self.empty_widget)
+
         # Connect view toggle
         self.grid_button.clicked.connect(self._update_view)
         self.list_button.clicked.connect(self._update_view)
@@ -300,105 +310,85 @@ class ResultsWidget(QWidget):
         empty_icon.setStyleSheet("font-size: 48px;")
         
         # Empty title
-        empty_title = QLabel("No results yet")
-        empty_title.setProperty("class", "subtitle")
-        empty_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.empty_title = QLabel("No results yet")
+        self.empty_title.setProperty("class", "subtitle")
+        self.empty_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
         # Empty description
-        empty_desc = QLabel("Search for manga titles or paste a direct URL to get started")
-        empty_desc.setProperty("class", "caption")
-        empty_desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        empty_desc.setWordWrap(True)
+        self.empty_desc = QLabel("Search for manga titles or paste a direct URL to get started")
+        self.empty_desc.setProperty("class", "caption")
+        self.empty_desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.empty_desc.setWordWrap(True)
         
         empty_layout.addWidget(empty_icon)
-        empty_layout.addWidget(empty_title)
-        empty_layout.addWidget(empty_desc)
+        empty_layout.addWidget(self.empty_title)
+        empty_layout.addWidget(self.empty_desc)
         
-        # Initially show empty state
-        self.scroll_area.setWidget(self.empty_widget)
     
     def display_results(self, results: List[SearchResult], page: int = 1, total_pages: int = 1):
         """Display search results."""
+        self.hide_loading()
         self.current_results = results
         self.current_page = page
         
         if not results:
-            self._show_empty_state("No manga found", "Try different search terms or check your spelling")
+            self.show_error("No manga found", "Try different search terms or check your spelling.")
             return
         
         # Update header
         self.results_count.setText(f"{len(results)} results found")
         
-        # Clear existing results
+        # Clear previous results before adding new ones
         self._clear_results()
         
-        # Create new results container
-        self.results_container = QWidget()
-        self.results_layout = QGridLayout(self.results_container)
-        self.results_layout.setSpacing(16)
-        self.results_layout.setContentsMargins(8, 8, 8, 8)
-        
-        # Add result cards
-        columns = 3  # 3 cards per row
+        # Add result cards to the existing layout
+        columns = 3
         for i, result in enumerate(results):
             card = MangaCard(result)
             card.clicked.connect(self.manga_selected.emit)
-            
-            row = i // columns
-            col = i % columns
+            row, col = divmod(i, columns)
             self.results_layout.addWidget(card, row, col)
-        
-        # Add stretch to remaining columns
-        for col in range(len(results) % columns, columns):
-            if len(results) % columns != 0:  # Only if we have incomplete last row
-                spacer = QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
-                self.results_layout.addItem(spacer, (len(results) - 1) // columns, col)
-        
-        # Add vertical stretch
+            
+        # Add stretch to fill remaining space
         self.results_layout.setRowStretch(self.results_layout.rowCount(), 1)
         
-        self.scroll_area.setWidget(self.results_container)
+        # Switch to the results view
+        self.view_stack.setCurrentWidget(self.results_container)
         
         # Update pagination
         self.pagination.set_page_info(page, total_pages)
     
     def _show_empty_state(self, title: str, description: str):
         """Show empty state with custom message."""
-        empty_widget = QWidget()
-        empty_layout = QVBoxLayout(empty_widget)
-        empty_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        empty_layout.setSpacing(16)
-        
-        # Empty icon
-        empty_icon = QLabel("😔")
-        empty_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        empty_icon.setStyleSheet("font-size: 48px;")
-        
-        # Empty title
-        empty_title = QLabel(title)
-        empty_title.setProperty("class", "subtitle")
-        empty_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        
-        # Empty description
-        empty_desc = QLabel(description)
-        empty_desc.setProperty("class", "caption")
-        empty_desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        empty_desc.setWordWrap(True)
-        
-        empty_layout.addWidget(empty_icon)
-        empty_layout.addWidget(empty_title)
-        empty_layout.addWidget(empty_desc)
-        
-        self.scroll_area.setWidget(empty_widget)
+        # Update the text of the existing empty_widget
+        self.empty_title.setText(title)
+        self.empty_desc.setText(description)
+        self.view_stack.setCurrentWidget(self.empty_widget)
         self.results_count.setText("")
     
     def _clear_results(self):
-        """Clear current results."""
-        # Clear the layout
-        while self.results_layout.count():
-            child = self.results_layout.takeAt(0)
-            if child.widget():
-                child.widget().deleteLater()
+        """Clear current results from the layout safely."""
+        if self.results_layout is None:
+            return
+        while (item := self.results_layout.takeAt(0)) is not None:
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+            else:
+                layout = item.layout()
+                if layout is not None:
+                    self._clear_layout(layout)
+
+    def _clear_layout(self, layout):
+        """Recursively clear a layout."""
+        while (item := layout.takeAt(0)) is not None:
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+            else:
+                nested_layout = item.layout()
+                if nested_layout is not None:
+                    self._clear_layout(nested_layout)
     
     def _update_view(self):
         """Update view mode (grid/list)."""
@@ -406,34 +396,37 @@ class ResultsWidget(QWidget):
         # List view can be implemented later
         pass
     
-    def show_loading(self):
-        """Show loading state."""
-        loading_widget = QWidget()
-        loading_layout = QVBoxLayout(loading_widget)
+    def _setup_loading_state(self):
+        """Set up the loading state widget."""
+        self.loading_widget = QWidget()
+        loading_layout = QVBoxLayout(self.loading_widget)
         loading_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         loading_layout.setSpacing(16)
         
         # Loading icon (spinning)
-        loading_icon = QLabel("⟳")
-        loading_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        loading_icon.setStyleSheet("font-size: 48px; color: #8B5CF6;")
+        self.loading_icon = QLabel("⟳")
+        self.loading_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.loading_icon.setStyleSheet("font-size: 48px; color: #8B5CF6;")
         
         # Loading text
         loading_text = QLabel("Searching for manga...")
         loading_text.setProperty("class", "subtitle")
         loading_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
-        loading_layout.addWidget(loading_icon)
+        loading_layout.addWidget(self.loading_icon)
         loading_layout.addWidget(loading_text)
-        
-        self.scroll_area.setWidget(loading_widget)
+
+    def show_loading(self):
+        """Show loading state."""
+        self.view_stack.setCurrentWidget(self.loading_widget)
         self.results_count.setText("Searching...")
         
         # Simple rotation animation for loading icon
-        self.loading_timer = QTimer()
-        self.loading_timer.timeout.connect(
-            lambda: loading_icon.setText("⟲" if loading_icon.text() == "⟳" else "⟳")
-        )
+        if not hasattr(self, 'loading_timer'):
+            self.loading_timer = QTimer()
+            self.loading_timer.timeout.connect(
+                lambda: self.loading_icon.setText("⟲" if self.loading_icon.text() == "⟳" else "⟳")
+            )
         self.loading_timer.start(500)
     
     def hide_loading(self):
@@ -441,14 +434,14 @@ class ResultsWidget(QWidget):
         if hasattr(self, 'loading_timer'):
             self.loading_timer.stop()
     
-    def show_error(self, error_message: str):
+    def show_error(self, title: str, message: str):
         """Show error state."""
         self.hide_loading()
-        self._show_empty_state("Search failed", f"Error: {error_message}")
+        self._show_empty_state(title, message)
     
     def clear(self):
         """Clear all results."""
         self.current_results = []
-        self.scroll_area.setWidget(self.empty_widget)
-        self.results_count.setText("")
+        self._clear_results()
+        self._show_empty_state("No results yet", "Search for manga titles or paste a direct URL to get started")
         self.pagination.set_page_info(1, 1)
