@@ -3,6 +3,7 @@ Search functionality for the Mangago Downloader.
 """
 import urllib.parse
 import re
+import time
 from typing import List, Optional, Tuple
 from bs4 import BeautifulSoup, Tag
 from selenium import webdriver
@@ -39,6 +40,9 @@ def search_manga(query: str, page: int = 1) -> List[SearchResult]:
         driver.get(search_url)
         
         WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "search_list")))
+        
+        # Wait for images to lazy-load
+        time.sleep(5)
         
         soup = BeautifulSoup(driver.page_source, 'html.parser')
         return _parse_search_results(soup)
@@ -88,6 +92,12 @@ def _parse_manga_item(item: Tag) -> Optional[Manga]:
         manga.total_chapters = int(float(match.group(1))) if match else 0
     else:
         manga.total_chapters = 0
+
+    cover_img_tag = item.select_one("img.loaded")
+    if cover_img_tag:
+        src = cover_img_tag.get("src")
+        if isinstance(src, str):
+            manga.cover_image_url = src
 
     return manga
 

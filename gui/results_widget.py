@@ -5,15 +5,45 @@ Modern results widget for displaying search results in beautiful card layout.
 import sys
 import os
 from typing import List, Optional
-from PyQt6.QtCore import Qt, pyqtSignal, QPropertyAnimation, QEasingCurve, QRect, QTimer, QSize, QEvent
+from PyQt6.QtCore import (Qt, pyqtSignal, QPropertyAnimation, QEasingCurve,
+                          QRect, QTimer, QSize, QEvent, QRunnable,
+                          QObject, pyqtSlot, QThreadPool)
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QScrollArea, QStackedWidget,
                              QLabel, QPushButton, QFrame, QGridLayout, QSizePolicy,
                              QSpacerItem, QButtonGroup)
 from PyQt6.QtGui import QPixmap, QPainter, QPainterPath, QBrush, QColor, QFont, QMouseEvent, QEnterEvent
+import httpx
 
 # Add src to path to import existing modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from src.models import SearchResult, Manga
+from src.utils import get_headers
+
+
+class WorkerSignals(QObject):
+    """Defines signals available from a running worker thread."""
+    finished = pyqtSignal()
+    error = pyqtSignal(tuple)
+    result = pyqtSignal(object)
+
+class ImageDownloader(QRunnable):
+    """Worker thread for downloading images."""
+    def __init__(self, url: str):
+        super().__init__()
+        self.url = url
+        self.signals = WorkerSignals()
+
+    @pyqtSlot()
+    def run(self):
+        try:
+            with httpx.Client(headers=get_headers()) as client:
+                response = client.get(self.url, timeout=20)
+                response.raise_for_status()
+                self.signals.result.emit(response.content)
+        except Exception as e:
+            self.signals.error.emit((e,))
+        finally:
+            self.signals.finished.emit()
 
 
 class MangaCard(QFrame):
@@ -26,8 +56,10 @@ class MangaCard(QFrame):
         self.search_result = search_result
         self.manga = search_result.manga
         self._is_hovered = False
+        self.threadpool = QThreadPool()
         self._setup_ui()
         self._setup_animations()
+        self._load_cover_image()
     
     def _setup_ui(self):
         """Set up the card UI."""
@@ -108,6 +140,24 @@ class MangaCard(QFrame):
         layout.addStretch()
         layout.addWidget(self.select_button)
     
+    def _load_cover_image(self):
+        """Load cover image from URL in a background thread."""
+        if self.manga.cover_image_url:
+            downloader = ImageDownloader(self.manga.cover_image_url)
+            downloader.signals.result.connect(self._set_cover_image)
+            self.threadpool.start(downloader)
+
+    def _set_cover_image(self, image_data: bytes):
+        """Set the cover image from downloaded data."""
+        pixmap = QPixmap()
+        pixmap.loadFromData(image_data)
+        self.cover_label.setPixmap(pixmap.scaled(
+            self.cover_label.size(),
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation
+        ))
+        self.cover_label.setStyleSheet("border: 1px solid #4A5568; border-radius: 8px;")
+
     def _setup_animations(self):
         """Set up hover animations."""
         self.shadow_animation = QPropertyAnimation(self, b"geometry")
@@ -145,7 +195,7 @@ class PaginationWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.current_page = 1
-        self.total_pages = 1
+        self.has_more_pages = True
         self._setup_ui()
     
     def _setup_ui(self):
@@ -159,7 +209,7 @@ class PaginationWidget(QWidget):
         self.prev_button.clicked.connect(self._go_previous)
         
         # Page info
-        self.page_label = QLabel("Page 1 of 1")
+        self.page_label = QLabel("Page 1")
         self.page_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.page_label.setMinimumWidth(120)
         
@@ -176,17 +226,21 @@ class PaginationWidget(QWidget):
         
         self._update_buttons()
     
-    def set_page_info(self, current: int, total: int):
-        """Set current page and total pages."""
-        self.current_page = max(1, current)
-        self.total_pages = max(1, total)
-        self.page_label.setText(f"Page {self.current_page} of {self.total_pages}")
+    def set_page(self, page: int, has_more: bool):
+        """Set the current page and whether more pages are available."""
+        self.current_page = page
+        self.has_more_pages = has_more
+        self.page_label.setText(f"Page {self.current_page}")
         self._update_buttons()
-    
+
+    def reset(self):
+        """Reset to the first page."""
+        self.set_page(1, True)
+
     def _update_buttons(self):
         """Update button states."""
         self.prev_button.setEnabled(self.current_page > 1)
-        self.next_button.setEnabled(self.current_page < self.total_pages)
+        self.next_button.setEnabled(self.has_more_pages)
     
     def _go_previous(self):
         """Go to previous page."""
@@ -195,7 +249,7 @@ class PaginationWidget(QWidget):
     
     def _go_next(self):
         """Go to next page."""
-        if self.current_page < self.total_pages:
+        if self.has_more_pages:
             self.page_changed.emit(self.current_page + 1)
 
 
@@ -325,13 +379,14 @@ class ResultsWidget(QWidget):
         empty_layout.addWidget(self.empty_desc)
         
     
-    def display_results(self, results: List[SearchResult], page: int = 1, total_pages: int = 1):
+    def display_results(self, results: List[SearchResult], page: int):
         """Display search results."""
         self.hide_loading()
         self.current_results = results
         self.current_page = page
         
-        if not results:
+        has_more = bool(results)
+        if not has_more and page == 1:
             self.show_error("No manga found", "Try different search terms or check your spelling.")
             return
         
@@ -356,7 +411,7 @@ class ResultsWidget(QWidget):
         self.view_stack.setCurrentWidget(self.results_container)
         
         # Update pagination
-        self.pagination.set_page_info(page, total_pages)
+        self.pagination.set_page(page, has_more)
     
     def _show_empty_state(self, title: str, description: str):
         """Show empty state with custom message."""
@@ -418,6 +473,7 @@ class ResultsWidget(QWidget):
 
     def show_loading(self):
         """Show loading state."""
+        self.pagination.reset() # Reset pagination on new search
         self.view_stack.setCurrentWidget(self.loading_widget)
         self.results_count.setText("Searching...")
         
@@ -444,4 +500,4 @@ class ResultsWidget(QWidget):
         self.current_results = []
         self._clear_results()
         self._show_empty_state("No results yet", "Search for manga titles or paste a direct URL to get started")
-        self.pagination.set_page_info(1, 1)
+        self.pagination.reset()

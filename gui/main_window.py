@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QStackedWidget, QPushButton, QLabel, QFrame, 
                              QSplitter, QMenuBar, QMenu, QStatusBar, QMessageBox,
                              QTabWidget, QApplication)
-from PyQt6.QtGui import QAction, QIcon, QFont, QPixmap
+from PyQt6.QtGui import QAction, QIcon, QFont, QPixmap, QCloseEvent
 
 # Import our custom widgets
 from .search_widget import SearchWidget
@@ -275,6 +275,7 @@ class MainWindow(QMainWindow):
         self.current_manga = None
         self.current_chapters = []
         self.download_config = {}
+        self.current_search_page = 1
         self._setup_controllers()
         self._setup_ui()
         self._setup_connections()
@@ -332,7 +333,10 @@ class MainWindow(QMainWindow):
         main_layout.addLayout(content_layout)
         
         # Status bar
-        self.statusBar().showMessage("Ready to search for manga")
+        # Status bar
+        self.status_bar = self.statusBar()
+        if self.status_bar:
+            self.status_bar.showMessage("Ready to search for manga")
         
         # Set initial view
         self.content_stack.setCurrentWidget(self.search_widget)
@@ -399,7 +403,7 @@ class MainWindow(QMainWindow):
         
         # Manga controller
         self.manga_controller.details_started.connect(
-            lambda: self.statusBar().showMessage("Loading manga details...")
+            lambda: self.status_bar.showMessage("Loading manga details...") if self.status_bar else None
         )
         self.manga_controller.details_completed.connect(self._on_manga_details_completed)
         self.manga_controller.chapters_completed.connect(self._on_chapters_completed)
@@ -417,7 +421,7 @@ class MainWindow(QMainWindow):
         
         # Conversion controller
         self.conversion_controller.conversion_started.connect(
-            lambda: self.statusBar().showMessage("Converting chapters...")
+            lambda: self.status_bar.showMessage("Converting chapters...") if self.status_bar else None
         )
         self.conversion_controller.conversion_completed.connect(self._on_conversion_completed)
         self.conversion_controller.conversion_failed.connect(self._on_operation_failed)
@@ -430,7 +434,8 @@ class MainWindow(QMainWindow):
     # Event handlers
     def _on_theme_changed(self, theme: str):
         """Handle theme change."""
-        self.statusBar().showMessage(f"Switched to {theme} theme", 2000)
+        if self.status_bar:
+            self.status_bar.showMessage(f"Switched to {theme} theme", 2000)
     
     def _on_view_changed(self, view_name: str):
         """Handle view change."""
@@ -453,41 +458,47 @@ class MainWindow(QMainWindow):
                 "download": "Configure download settings",
                 "progress": "Monitor download progress"
             }
-            self.statusBar().showMessage(view_names.get(view_name, "Ready"))
+            if self.status_bar:
+                self.status_bar.showMessage(view_names.get(view_name, "Ready"))
     
     def _on_search_requested(self, query: str, mode: str):
         """Handle search request."""
         if mode == "title":
-            self.search_controller.search_manga(query)
+            self.current_search_page = 1
+            self.search_controller.search_manga(query, self.current_search_page)
         else:  # URL mode
             self.manga_controller.get_manga_details(query)
             # Switch to details view for URL mode
             self.navigation._on_nav_clicked("details")
         
-        self.statusBar().showMessage(f"Searching: {query}")
+        if self.status_bar:
+            self.status_bar.showMessage(f"Searching: {query}")
     
     def _on_search_page_changed(self, page: int):
         """Handle search page change."""
+        self.current_search_page = page
         query = self.search_widget.get_search_query()
         if query:
-            self.search_controller.search_manga(query, page)
+            self.search_controller.search_manga(query, self.current_search_page)
     
     def _on_search_completed(self, results: List[SearchResult]):
         """Handle search completion."""
         self.results_widget.hide_loading()
-        self.results_widget.display_results(results)
+        self.results_widget.display_results(results, self.current_search_page)
         
         # Switch to results view
         self.navigation._on_nav_clicked("results")
         self.navigation.enable_view("results", True)
         
-        self.statusBar().showMessage(f"Found {len(results)} manga")
+        if self.status_bar:
+            self.status_bar.showMessage(f"Found {len(results)} manga")
     
     def _on_search_failed(self, error: str):
         """Handle search failure."""
         self.results_widget.hide_loading()
-        self.results_widget.show_error(error)
-        self.statusBar().showMessage(f"Search failed: {error}")
+        self.results_widget.show_error("Search Failed", error)
+        if self.status_bar:
+            self.status_bar.showMessage(f"Search failed: {error}")
     
     def _on_manga_selected(self, result: SearchResult):
         """Handle manga selection."""
@@ -499,13 +510,15 @@ class MainWindow(QMainWindow):
         """Handle manga details completion."""
         self.current_manga = manga
         self.details_widget.update_manga(manga)
-        self.statusBar().showMessage(f"Loaded details for: {manga.title}")
+        if self.status_bar:
+            self.status_bar.showMessage(f"Loaded details for: {manga.title}")
     
     def _on_chapters_completed(self, chapters: List[Chapter]):
         """Handle chapters list completion."""
         self.current_chapters = chapters
         self.details_widget.update_chapters(chapters)
-        self.statusBar().showMessage(f"Found {len(chapters)} chapters")
+        if self.status_bar:
+            self.status_bar.showMessage(f"Found {len(chapters)} chapters")
     
     def _on_chapters_selected(self, manga: Manga, selected_chapters: List[Chapter]):
         """Handle chapters selection for download."""
@@ -517,7 +530,8 @@ class MainWindow(QMainWindow):
         self.navigation.enable_view("download", True)
         self.download_widget.enable_download(True)
         
-        self.statusBar().showMessage(f"Selected {len(selected_chapters)} chapters for download")
+        if self.status_bar:
+            self.status_bar.showMessage(f"Selected {len(selected_chapters)} chapters for download")
     
     def _on_download_requested(self, config: dict):
         """Handle download request."""
@@ -542,19 +556,23 @@ class MainWindow(QMainWindow):
     def _on_download_started(self):
         """Handle download start."""
         self.progress_widget.start_download(self.current_chapters)
-        self.statusBar().showMessage("Download started")
+        if self.status_bar:
+            self.status_bar.showMessage("Download started")
     
     def _on_urls_progress(self, current: int, total: int):
         """Handle URL fetching progress."""
-        self.statusBar().showMessage(f"Fetching URLs: {current}/{total}")
+        if self.status_bar:
+            self.status_bar.showMessage(f"Fetching URLs: {current}/{total}")
     
     def _on_urls_completed(self):
         """Handle URL fetching completion."""
-        self.statusBar().showMessage("Starting chapter downloads...")
+        if self.status_bar:
+            self.status_bar.showMessage("Starting chapter downloads...")
     
     def _on_download_progress(self, current: int, total: int):
         """Handle download progress."""
-        self.statusBar().showMessage(f"Downloading: {current}/{total} chapters")
+        if self.status_bar:
+            self.status_bar.showMessage(f"Downloading: {current}/{total} chapters")
     
     def _on_chapter_downloaded(self, result):
         """Handle individual chapter download completion."""
@@ -567,27 +585,30 @@ class MainWindow(QMainWindow):
         successful = [r for r in results if r.success]
         failed = [r for r in results if not r.success]
         
-        self.statusBar().showMessage(
-            f"Download completed: {len(successful)} successful, {len(failed)} failed"
-        )
+        if self.status_bar:
+            self.status_bar.showMessage(
+                f"Download completed: {len(successful)} successful, {len(failed)} failed"
+            )
         
         # Start conversion if needed
         format_type = self.download_config.get("format", "images")
-        if format_type != "images" and successful:
+        if format_type != "images" and successful and self.current_manga:
             delete_images = self.download_config.get("delete_images", False)
             self.conversion_controller.convert_chapters(
-                self.current_manga, 
-                format_type, 
+                self.current_manga,
+                format_type,
                 delete_images
             )
     
     def _on_download_status_updated(self, status: str):
         """Handle download status updates."""
-        self.statusBar().showMessage(status)
+        if self.status_bar:
+            self.status_bar.showMessage(status)
     
     def _on_conversion_completed(self, created_files: List[str]):
         """Handle conversion completion."""
-        self.statusBar().showMessage(f"Converted {len(created_files)} chapters successfully")
+        if self.status_bar:
+            self.status_bar.showMessage(f"Converted {len(created_files)} chapters successfully")
         
         # Show completion message
         QMessageBox.information(
@@ -599,26 +620,31 @@ class MainWindow(QMainWindow):
     
     def _on_operation_failed(self, error: str):
         """Handle operation failure."""
-        self.statusBar().showMessage(f"Error: {error}")
+        if self.status_bar:
+            self.status_bar.showMessage(f"Error: {error}")
         QMessageBox.critical(self, "Operation Failed", f"An error occurred:\n\n{error}")
     
     def _on_download_paused(self):
         """Handle download pause."""
-        self.statusBar().showMessage("Download paused")
+        if self.status_bar:
+            self.status_bar.showMessage("Download paused")
     
     def _on_download_resumed(self):
         """Handle download resume."""
-        self.statusBar().showMessage("Download resumed")
+        if self.status_bar:
+            self.status_bar.showMessage("Download resumed")
     
     def _on_download_cancelled(self):
         """Handle download cancellation."""
-        self.statusBar().showMessage("Download cancelled")
+        if self.status_bar:
+            self.status_bar.showMessage("Download cancelled")
     
-    def closeEvent(self, event):
+    def closeEvent(self, a0: QCloseEvent | None) -> None:
         """Handle window close event."""
         # Clean up any running operations
         if hasattr(self, 'download_controller'):
             # Note: In a full implementation, you'd want to properly stop downloads
             pass
         
-        event.accept()
+        if a0:
+            a0.accept()
