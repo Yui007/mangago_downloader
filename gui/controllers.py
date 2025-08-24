@@ -331,12 +331,17 @@ class ConversionController(QObject):
         super().__init__()
         self.worker = None
     
-    def convert_chapters(self, manga: Manga, format_type: str, delete_images: bool = False):
+    def convert_chapters(self, manga: Manga, format_type: str, delete_images: bool = False, download_config: Optional[dict] = None):
         """Convert downloaded chapters to specified format."""
         if self.worker and self.worker.isRunning():
             return
         
-        manga_dir = os.path.join("downloads", sanitize_filename(manga.title))
+        # Get download directory from config, with fallback to default
+        download_dir = "downloads"
+        if download_config:
+            download_dir = download_config.get("download_location", "downloads")
+        
+        manga_dir = os.path.join(download_dir, sanitize_filename(manga.title))
         
         self.conversion_started.emit()
         self.worker = ConversionWorker(manga_dir, format_type, delete_images)

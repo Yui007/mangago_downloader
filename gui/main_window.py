@@ -598,7 +598,8 @@ class MainWindow(QMainWindow):
             self.conversion_controller.convert_chapters(
                 self.current_manga,
                 format_type,
-                delete_images
+                delete_images,
+                self.download_config
             )
     
     def _on_download_status_updated(self, status: str):

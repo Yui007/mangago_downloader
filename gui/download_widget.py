@@ -11,6 +11,9 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QGroupBox,
                              QButtonGroup, QSlider, QComboBox, QFormLayout, QScrollArea)
 from PyQt6.QtGui import QFont
 
+# Import ConfigManager
+from .config import ConfigManager
+
 
 class FormatSelectionWidget(QWidget):
     """Widget for selecting download format."""
@@ -19,6 +22,7 @@ class FormatSelectionWidget(QWidget):
     
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.config_manager = ConfigManager()
         self._setup_ui()
     
     def _setup_ui(self):
@@ -46,19 +50,23 @@ class FormatSelectionWidget(QWidget):
         
         # Images only
         self.images_radio = QRadioButton("Images Only")
-        self.images_radio.setChecked(True)  # Default
+        # Get default format from config
+        default_format = self.config_manager.get("format", "images")
+        self.images_radio.setChecked(default_format == "images")
         self.images_desc = QLabel("Save as individual image files (JPG/PNG)")
         self.images_desc.setProperty("class", "caption")
         self.images_desc.setStyleSheet("color: #94A3B8; margin-left: 20px;")
         
         # PDF format
         self.pdf_radio = QRadioButton("PDF")
+        self.pdf_radio.setChecked(default_format == "pdf")
         self.pdf_desc = QLabel("Convert to PDF document for easy reading")
         self.pdf_desc.setProperty("class", "caption")
         self.pdf_desc.setStyleSheet("color: #94A3B8; margin-left: 20px;")
         
         # CBZ format
         self.cbz_radio = QRadioButton("CBZ")
+        self.cbz_radio.setChecked(default_format == "cbz")
         self.cbz_desc = QLabel("Comic Book ZIP format for comic readers")
         self.cbz_desc.setProperty("class", "caption")
         self.cbz_desc.setStyleSheet("color: #94A3B8; margin-left: 20px;")
@@ -83,8 +91,12 @@ class FormatSelectionWidget(QWidget):
         
         # Connect signals
         self.images_radio.toggled.connect(self._on_format_changed)
+        self.images_radio.toggled.connect(self._save_config)
         self.pdf_radio.toggled.connect(self._on_format_changed)
+        self.pdf_radio.toggled.connect(self._save_config)
         self.cbz_radio.toggled.connect(self._on_format_changed)
+        self.cbz_radio.toggled.connect(self._save_config)
+        self.delete_images_checkbox.stateChanged.connect(self._save_config)
     
     def _setup_format_options(self, parent_layout):
         """Set up format-specific options."""
@@ -94,7 +106,9 @@ class FormatSelectionWidget(QWidget):
         delete_layout = QVBoxLayout(self.delete_images_frame)
         
         self.delete_images_checkbox = QCheckBox("Delete images after conversion")
-        self.delete_images_checkbox.setChecked(False)
+        # Get default delete images setting from config
+        default_delete_images = self.config_manager.get("delete_images", False)
+        self.delete_images_checkbox.setChecked(default_delete_images)
         
         delete_desc = QLabel("Remove original image files to save space")
         delete_desc.setProperty("class", "caption")
@@ -122,6 +136,14 @@ class FormatSelectionWidget(QWidget):
         
         self.format_changed.emit(format_name)
     
+    def _save_config(self):
+        """Save current configuration to ConfigManager."""
+        config = {
+            "format": self.get_format(),
+            "delete_images": self.should_delete_images()
+        }
+        self.config_manager.set_all(config)
+    
     def get_format(self) -> str:
         """Get selected format."""
         if self.pdf_radio.isChecked():
@@ -142,6 +164,7 @@ class DownloadOptionsWidget(QWidget):
     
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.config_manager = ConfigManager()
         self._setup_ui()
 
     def _setup_ui(self):
@@ -162,7 +185,9 @@ class DownloadOptionsWidget(QWidget):
         location_group = QGroupBox("Download Location")
         location_layout = QVBoxLayout(location_group)
         
-        self.location_input = QLineEdit(os.path.abspath("downloads"))
+        # Get default download location from config
+        default_download_location = self.config_manager.get("download_location", os.path.abspath("downloads"))
+        self.location_input = QLineEdit(default_download_location)
         self.location_input.setMinimumHeight(36)
         self.location_input.setPlaceholderText("Select download folder...")
         
@@ -185,7 +210,9 @@ class DownloadOptionsWidget(QWidget):
 
         self.concurrent_spin = QSpinBox()
         self.concurrent_spin.setRange(1, 20)
-        self.concurrent_spin.setValue(5)
+        # Get default max workers from config
+        default_max_workers = self.config_manager.get("max_workers", 5)
+        self.concurrent_spin.setValue(default_max_workers)
         self.concurrent_spin.setSuffix(" threads")
         self.concurrent_spin.setMinimumWidth(100) # Make the spinbox wider
         performance_layout.addRow("Concurrent Downloads:", self.concurrent_spin)
@@ -231,7 +258,9 @@ class DownloadOptionsWidget(QWidget):
         retry_label = QLabel("Retry Failed Downloads:")
         self.retry_spin = QSpinBox()
         self.retry_spin.setRange(0, 10)
-        self.retry_spin.setValue(3)
+        # Get default retry count from config
+        default_retry_count = self.config_manager.get("retry_count", 3)
+        self.retry_spin.setValue(default_retry_count)
         self.retry_spin.setSuffix(" times")
         self.retry_spin.setFixedWidth(120)
         retry_layout.addWidget(retry_label)
@@ -246,7 +275,9 @@ class DownloadOptionsWidget(QWidget):
         timeout_label = QLabel("Download Timeout:")
         self.timeout_spin = QSpinBox()
         self.timeout_spin.setRange(10, 300)
-        self.timeout_spin.setValue(30)
+        # Get default timeout from config
+        default_timeout = self.config_manager.get("timeout", 30)
+        self.timeout_spin.setValue(default_timeout)
         self.timeout_spin.setSuffix(" seconds")
         self.timeout_spin.setFixedWidth(120)
         timeout_layout.addWidget(timeout_label)
@@ -256,7 +287,9 @@ class DownloadOptionsWidget(QWidget):
 
         # Checkbox section
         self.overwrite_checkbox = QCheckBox("Overwrite existing files")
-        self.overwrite_checkbox.setChecked(False)
+        # Get default overwrite setting from config
+        default_overwrite = self.config_manager.get("overwrite_existing", False)
+        self.overwrite_checkbox.setChecked(default_overwrite)
         advanced_layout.addWidget(self.overwrite_checkbox)
 
         # Set the content widget to the scroll area
@@ -309,7 +342,9 @@ class DownloadWidget(QWidget):
     
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.config_manager = ConfigManager()
         self._setup_ui()
+        self._load_config()
     
     def _setup_ui(self):
         """Set up the download widget UI."""
@@ -339,16 +374,51 @@ class DownloadWidget(QWidget):
         
         # Format selection
         self.format_widget = FormatSelectionWidget()
+        self.format_widget.format_changed.connect(self._save_config)
         layout.addWidget(self.format_widget)
         
         # Download options
         self.options_widget = DownloadOptionsWidget()
+        # Connect signals to save config when options change
+        self.options_widget.location_input.textChanged.connect(self._save_config)
+        self.options_widget.concurrent_spin.valueChanged.connect(self._save_config)
+        self.options_widget.retry_spin.valueChanged.connect(self._save_config)
+        self.options_widget.timeout_spin.valueChanged.connect(self._save_config)
+        self.options_widget.overwrite_checkbox.stateChanged.connect(self._save_config)
         layout.addWidget(self.options_widget)
         
         # Action buttons
         self._setup_action_buttons(layout)
         
         layout.addStretch()
+    
+    def _load_config(self):
+        """Load configuration from ConfigManager."""
+        config = self.config_manager.get_all()
+        
+        # Set format
+        format_type = config.get("format", "images")
+        if format_type == "pdf":
+            self.format_widget.pdf_radio.setChecked(True)
+        elif format_type == "cbz":
+            self.format_widget.cbz_radio.setChecked(True)
+        else:
+            self.format_widget.images_radio.setChecked(True)
+        
+        # Set download options
+        self.options_widget.location_input.setText(config.get("download_location", os.path.abspath("downloads")))
+        self.options_widget.concurrent_spin.setValue(config.get("max_workers", 5))
+        self.options_widget.retry_spin.setValue(config.get("retry_count", 3))
+        self.options_widget.timeout_spin.setValue(config.get("timeout", 30))
+        self.options_widget.overwrite_checkbox.setChecked(config.get("overwrite_existing", False))
+        
+        # Set delete images option
+        self.format_widget.delete_images_checkbox.setChecked(config.get("delete_images", False))
+    
+    def _save_config(self):
+        """Save current configuration to ConfigManager."""
+        config = self.get_download_config()
+        self.config_manager.set_all(config)
     
     def _setup_action_buttons(self, parent_layout):
         """Set up action buttons."""
@@ -390,6 +460,9 @@ class DownloadWidget(QWidget):
         self.options_widget.retry_spin.setValue(3)
         self.options_widget.timeout_spin.setValue(30)
         self.options_widget.overwrite_checkbox.setChecked(False)
+        
+        # Save the reset configuration
+        self._save_config()
         
         self.set_status("Settings reset to defaults", "info")
     

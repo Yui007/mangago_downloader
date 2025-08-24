@@ -1,0 +1,9 @@
+{
+  "download_location": "",
+  "max_workers": 5,
+  "retry_count": 3,
+  "timeout": 30,
+  "overwrite_existing": false,
+  "format": "images",
+  "delete_images": false
+}
