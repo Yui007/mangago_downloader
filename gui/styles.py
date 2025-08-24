@@ -4,6 +4,7 @@ Provides dark/light theme support with beautiful modern design elements.
 """
 
 from PyQt6.QtCore import QObject, pyqtSignal
+from PyQt6.QtGui import QGuiApplication
 from PyQt6.QtWidgets import QApplication
 from typing import Dict, Any
 
@@ -34,9 +35,9 @@ class StyleManager(QObject):
     
     def apply_theme(self):
         """Apply the current theme to the application."""
-        app = QApplication.instance()
-        if app:
-            app.setStyleSheet(self._themes[self._current_theme])
+        app = QGuiApplication.instance()
+        if isinstance(app, QApplication):
+            app.setStyleSheet(self._themes[self.get_current_theme()])
     
     def _get_dark_theme(self) -> str:
         """Get the dark theme stylesheet."""
@@ -268,7 +269,6 @@ class StyleManager(QObject):
         }
         
         QRadioButton::indicator:checked:after {
-            content: "";
             width: 6px;
             height: 6px;
             border-radius: 3px;

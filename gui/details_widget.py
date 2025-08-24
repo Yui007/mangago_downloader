@@ -96,6 +96,7 @@ class MangaInfoWidget(QWidget):
         metadata_layout.addWidget(self.genres_value, 1, 1)
         metadata_layout.addWidget(self.status_label, 2, 0)
         metadata_layout.addWidget(self.status_value, 2, 1)
+        metadata_layout.setColumnStretch(1, 1) # Allow the second column to expand
         
         # Description/Summary (for future enhancement)
         self.summary_group = QGroupBox("Summary")
@@ -476,7 +477,7 @@ class DetailsWidget(QWidget):
         # Add to splitter
         splitter.addWidget(info_frame)
         splitter.addWidget(selection_frame)
-        splitter.setSizes([300, 400])  # Initial sizes
+        splitter.setStretchFactor(1, 1) # Allow chapter selection to expand
         
         layout.addWidget(splitter)
         

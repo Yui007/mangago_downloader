@@ -139,7 +139,7 @@ class MangaCard(QFrame):
     def enterEvent(self, event: QEnterEvent | None) -> None:
         """Handle mouse enter for hover effect."""
         super().enterEvent(event)
-        self.setProperty("class", "card-hover")
+        self.setProperty("class", "card card-hover")
         style = self.style()
         if style:
             style.polish(self)
