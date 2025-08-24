@@ -5,8 +5,8 @@ Modern download widget for format selection and download configuration.
 import os
 from typing import Dict, Any
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, 
-                             QRadioButton, QCheckBox, QSpinBox, QLabel, 
+from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QGroupBox,
+                             QRadioButton, QCheckBox, QSpinBox, QLabel,
                              QPushButton, QFrame, QFileDialog, QLineEdit,
                              QButtonGroup, QSlider, QComboBox)
 from PyQt6.QtGui import QFont
@@ -161,12 +161,15 @@ class DownloadOptionsWidget(QWidget):
         # Download location
         location_frame = QFrame()
         location_frame.setProperty("class", "card")
+        location_frame.setMinimumHeight(100)  # Set minimum height
         location_layout = QVBoxLayout(location_frame)
+        location_layout.setSpacing(8)
+        location_layout.setContentsMargins(16, 16, 16, 16)  # Add margins
         
         location_label = QLabel("Download Location")
         location_label.setProperty("class", "subtitle")
+        location_layout.addWidget(location_label)
         
-        location_input_layout = QHBoxLayout()
         self.location_input = QLineEdit()
         self.location_input.setPlaceholderText("Select download folder...")
         self.location_input.setText(os.path.abspath("downloads"))
@@ -174,11 +177,10 @@ class DownloadOptionsWidget(QWidget):
         self.browse_button = QPushButton("Browse")
         self.browse_button.setProperty("class", "secondary")
         self.browse_button.clicked.connect(self._browse_location)
-        
+
+        location_input_layout = QHBoxLayout()
         location_input_layout.addWidget(self.location_input, 1)
         location_input_layout.addWidget(self.browse_button)
-        
-        location_layout.addWidget(location_label)
         location_layout.addLayout(location_input_layout)
         
         layout.addWidget(location_frame)
@@ -186,7 +188,10 @@ class DownloadOptionsWidget(QWidget):
         # Performance options
         performance_frame = QFrame()
         performance_frame.setProperty("class", "card")
+        performance_frame.setMinimumHeight(150)  # Set minimum height
         performance_layout = QVBoxLayout(performance_frame)
+        performance_layout.setSpacing(12)
+        performance_layout.setContentsMargins(16, 16, 16, 16)  # Add margins
         
         perf_label = QLabel("Performance Settings")
         perf_label.setProperty("class", "subtitle")
@@ -195,31 +200,39 @@ class DownloadOptionsWidget(QWidget):
         # Concurrent downloads
         concurrent_layout = QHBoxLayout()
         concurrent_label = QLabel("Concurrent Downloads:")
+        concurrent_label.setMinimumWidth(150)
+        
         self.concurrent_spin = QSpinBox()
         self.concurrent_spin.setMinimum(1)
         self.concurrent_spin.setMaximum(20)
         self.concurrent_spin.setValue(5)
         self.concurrent_spin.setSuffix(" threads")
-        
-        concurrent_desc = QLabel("Higher values = faster downloads but more system load")
-        concurrent_desc.setProperty("class", "caption")
-        concurrent_desc.setStyleSheet("color: #94A3B8;")
+        self.concurrent_spin.setMinimumWidth(120)
         
         concurrent_layout.addWidget(concurrent_label)
         concurrent_layout.addWidget(self.concurrent_spin)
         concurrent_layout.addStretch()
         
         performance_layout.addLayout(concurrent_layout)
+        
+        concurrent_desc = QLabel("Higher values = faster downloads but more system load")
+        concurrent_desc.setProperty("class", "caption")
+        concurrent_desc.setStyleSheet("color: #94A3B8; font-size: 12px;")
         performance_layout.addWidget(concurrent_desc)
         
         # Download speed slider (visual only, for user feedback)
         speed_layout = QHBoxLayout()
         speed_label = QLabel("Expected Speed:")
+        speed_label.setMinimumWidth(150)
+        
         self.speed_slider = QSlider(Qt.Orientation.Horizontal)
         self.speed_slider.setMinimum(1)
         self.speed_slider.setMaximum(10)
         self.speed_slider.setValue(5)
+        self.speed_slider.setMinimumWidth(200)
+        
         self.speed_value = QLabel("Normal")
+        self.speed_value.setMinimumWidth(80)
         
         # Connect slider to update label
         self.speed_slider.valueChanged.connect(self._update_speed_label)
@@ -235,40 +248,49 @@ class DownloadOptionsWidget(QWidget):
         
         # Advanced options
         self._setup_advanced_options(layout)
-    
+
     def _setup_advanced_options(self, parent_layout):
         """Set up advanced download options."""
         advanced_frame = QFrame()
         advanced_frame.setProperty("class", "card")
+        advanced_frame.setMinimumHeight(180)  # Set minimum height
         advanced_layout = QVBoxLayout(advanced_frame)
+        advanced_layout.setSpacing(12)
+        advanced_layout.setContentsMargins(16, 16, 16, 16)  # Add margins
         
         advanced_label = QLabel("Advanced Options")
         advanced_label.setProperty("class", "subtitle")
         advanced_layout.addWidget(advanced_label)
-        
+
         # Retry options
         retry_layout = QHBoxLayout()
         retry_label = QLabel("Retry Failed Downloads:")
+        retry_label.setMinimumWidth(150)
+        
         self.retry_spin = QSpinBox()
         self.retry_spin.setMinimum(0)
         self.retry_spin.setMaximum(10)
         self.retry_spin.setValue(3)
         self.retry_spin.setSuffix(" times")
+        self.retry_spin.setMinimumWidth(120)
         
         retry_layout.addWidget(retry_label)
         retry_layout.addWidget(self.retry_spin)
         retry_layout.addStretch()
         
         advanced_layout.addLayout(retry_layout)
-        
+
         # Timeout settings
         timeout_layout = QHBoxLayout()
         timeout_label = QLabel("Download Timeout:")
+        timeout_label.setMinimumWidth(150)
+        
         self.timeout_spin = QSpinBox()
         self.timeout_spin.setMinimum(10)
         self.timeout_spin.setMaximum(300)
         self.timeout_spin.setValue(30)
         self.timeout_spin.setSuffix(" seconds")
+        self.timeout_spin.setMinimumWidth(120)
         
         timeout_layout.addWidget(timeout_label)
         timeout_layout.addWidget(self.timeout_spin)
