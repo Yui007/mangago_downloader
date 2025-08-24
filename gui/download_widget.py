@@ -8,7 +8,7 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QGroupBox,
                              QRadioButton, QCheckBox, QSpinBox, QLabel,
                              QPushButton, QFrame, QFileDialog, QLineEdit,
-                             QButtonGroup, QSlider, QComboBox, QFormLayout)
+                             QButtonGroup, QSlider, QComboBox, QFormLayout, QScrollArea)
 from PyQt6.QtGui import QFont
 
 
@@ -163,6 +163,7 @@ class DownloadOptionsWidget(QWidget):
         location_layout = QVBoxLayout(location_group)
         
         self.location_input = QLineEdit(os.path.abspath("downloads"))
+        self.location_input.setMinimumHeight(36)
         self.location_input.setPlaceholderText("Select download folder...")
         
         self.browse_button = QPushButton("Browse")
@@ -180,47 +181,91 @@ class DownloadOptionsWidget(QWidget):
         performance_group = QGroupBox("Performance Settings")
         performance_layout = QFormLayout(performance_group)
         performance_layout.setSpacing(12)
+        performance_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
 
         self.concurrent_spin = QSpinBox()
         self.concurrent_spin.setRange(1, 20)
         self.concurrent_spin.setValue(5)
         self.concurrent_spin.setSuffix(" threads")
+        self.concurrent_spin.setMinimumWidth(100) # Make the spinbox wider
         performance_layout.addRow("Concurrent Downloads:", self.concurrent_spin)
 
         self.speed_slider = QSlider(Qt.Orientation.Horizontal)
         self.speed_slider.setRange(1, 10)
         self.speed_slider.setValue(5)
+        self.speed_slider.setMinimumWidth(200) # Make the slider wider
         self.speed_value = QLabel("Normal")
+        self.speed_value.setMinimumWidth(80) # Ensure the speed label has enough space
         self.speed_slider.valueChanged.connect(self._update_speed_label)
         self.concurrent_spin.valueChanged.connect(self._update_speed_from_threads)
         
         speed_layout = QHBoxLayout()
-        speed_layout.addWidget(self.speed_slider)
+        speed_layout.addWidget(self.speed_slider, 1) # Allow slider to expand
         speed_layout.addWidget(self.speed_value)
         performance_layout.addRow("Expected Speed:", speed_layout)
         
         main_layout.addWidget(performance_group)
         
-        # --- Advanced Group ---
+       # --- Advanced Group ---
         advanced_group = QGroupBox("Advanced Options")
-        advanced_layout = QFormLayout(advanced_group)
-        advanced_layout.setSpacing(12)
+        advanced_group.setMinimumHeight(120)
+        advanced_group.setMaximumHeight(150)  # Set a maximum height to trigger scrolling
 
+        # Create a scroll area
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll_area.setFrameShape(QFrame.Shape.NoFrame)  # Remove the frame border
+
+        # Create the content widget that will be scrollable
+        content_widget = QWidget()
+        advanced_layout = QVBoxLayout(content_widget)
+        advanced_layout.setSpacing(15)
+        advanced_layout.setContentsMargins(15, 10, 15, 15)
+
+        # Retry section
+        retry_widget = QWidget()
+        retry_layout = QHBoxLayout(retry_widget)
+        retry_layout.setContentsMargins(0, 0, 0, 0)
+        retry_label = QLabel("Retry Failed Downloads:")
         self.retry_spin = QSpinBox()
         self.retry_spin.setRange(0, 10)
         self.retry_spin.setValue(3)
         self.retry_spin.setSuffix(" times")
-        advanced_layout.addRow("Retry Failed Downloads:", self.retry_spin)
+        self.retry_spin.setFixedWidth(120)
+        retry_layout.addWidget(retry_label)
+        retry_layout.addStretch()
+        retry_layout.addWidget(self.retry_spin)
+        advanced_layout.addWidget(retry_widget)
 
+        # Timeout section
+        timeout_widget = QWidget()
+        timeout_layout = QHBoxLayout(timeout_widget)
+        timeout_layout.setContentsMargins(0, 0, 0, 0)
+        timeout_label = QLabel("Download Timeout:")
         self.timeout_spin = QSpinBox()
         self.timeout_spin.setRange(10, 300)
         self.timeout_spin.setValue(30)
         self.timeout_spin.setSuffix(" seconds")
-        advanced_layout.addRow("Download Timeout:", self.timeout_spin)
+        self.timeout_spin.setFixedWidth(120)
+        timeout_layout.addWidget(timeout_label)
+        timeout_layout.addStretch()
+        timeout_layout.addWidget(self.timeout_spin)
+        advanced_layout.addWidget(timeout_widget)
 
+        # Checkbox section
         self.overwrite_checkbox = QCheckBox("Overwrite existing files")
         self.overwrite_checkbox.setChecked(False)
-        advanced_layout.addRow(self.overwrite_checkbox)
+        advanced_layout.addWidget(self.overwrite_checkbox)
+
+        # Set the content widget to the scroll area
+        scroll_area.setWidget(content_widget)
+
+        # Add the scroll area to the group box
+        group_layout = QVBoxLayout(advanced_group)
+        group_layout.setContentsMargins(5, 15, 5, 5)
+        group_layout.addWidget(scroll_area)
 
         main_layout.addWidget(advanced_group)
         main_layout.addStretch()
