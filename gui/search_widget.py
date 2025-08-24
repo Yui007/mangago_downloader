@@ -6,9 +6,10 @@ from PyQt6.QtCore import Qt, pyqtSignal, QPropertyAnimation, QEasingCurve, QRect
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, 
                              QPushButton, QLabel, QButtonGroup, QRadioButton,
                              QFrame, QCompleter)
-from PyQt6.QtGui import QIcon, QPixmap, QPainter, QPen
+from PyQt6.QtGui import QIcon, QPixmap, QPainter, QPen, QMouseEvent, QPaintEvent
 import json
 import os
+from typing import Optional
 
 
 class AnimatedToggle(QWidget):
@@ -45,11 +46,11 @@ class AnimatedToggle(QWidget):
     def isChecked(self):
         return self._checked
     
-    def mousePressEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton:
+    def mousePressEvent(self, a0: Optional[QMouseEvent]):
+        if a0 and a0.button() == Qt.MouseButton.LeftButton:
             self.setChecked(not self._checked)
     
-    def paintEvent(self, event):
+    def paintEvent(self, a0: Optional[QPaintEvent]):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
@@ -280,8 +281,10 @@ class SearchWidget(QWidget):
         """Set status message with appropriate styling."""
         self.status_label.setText(message)
         self.status_label.setProperty("class", f"status-{status_type}")
-        self.status_label.style().unpolish(self.status_label)
-        self.status_label.style().polish(self.status_label)
+        style = self.status_label.style()
+        if style:
+            style.unpolish(self.status_label)
+            style.polish(self.status_label)
     
     def clear_status(self):
         """Clear status message."""

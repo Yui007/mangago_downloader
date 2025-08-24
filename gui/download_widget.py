@@ -432,8 +432,10 @@ class DownloadWidget(QWidget):
         """Set status message."""
         self.status_label.setText(message)
         self.status_label.setProperty("class", f"status-{status_type}")
-        self.status_label.style().unpolish(self.status_label)
-        self.status_label.style().polish(self.status_label)
+        style = self.status_label.style()
+        if style:
+            style.unpolish(self.status_label)
+            style.polish(self.status_label)
     
     def set_downloading(self, downloading: bool):
         """Set downloading state."""
