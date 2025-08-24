@@ -8,7 +8,7 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QGroupBox,
                              QRadioButton, QCheckBox, QSpinBox, QLabel,
                              QPushButton, QFrame, QFileDialog, QLineEdit,
-                             QButtonGroup, QSlider, QComboBox)
+                             QButtonGroup, QSlider, QComboBox, QFormLayout)
 from PyQt6.QtGui import QFont
 
 
@@ -143,36 +143,27 @@ class DownloadOptionsWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._setup_ui()
-    
+
     def _setup_ui(self):
-        """Set up download options UI."""
-        layout = QVBoxLayout(self)
-        layout.setSpacing(16)
-        layout.setContentsMargins(16, 16, 16, 16)
-        
-        # Title
+        """Set up the download options UI from scratch."""
+        main_layout = QVBoxLayout(self)
+        main_layout.setSpacing(16)
+        main_layout.setContentsMargins(16, 16, 16, 16)
+
+        # --- Title ---
         title = QLabel("Download Options")
-        title.setProperty("class", "subtitle")
+        title.setProperty("class", "title")
         font = title.font()
         font.setWeight(QFont.Weight.Bold)
         title.setFont(font)
-        layout.addWidget(title)
+        main_layout.addWidget(title)
+
+        # --- Download Location Group ---
+        location_group = QGroupBox("Download Location")
+        location_layout = QVBoxLayout(location_group)
         
-        # Download location
-        location_frame = QFrame()
-        location_frame.setProperty("class", "card")
-        location_frame.setMinimumHeight(100)  # Set minimum height
-        location_layout = QVBoxLayout(location_frame)
-        location_layout.setSpacing(8)
-        location_layout.setContentsMargins(16, 16, 16, 16)  # Add margins
-        
-        location_label = QLabel("Download Location")
-        location_label.setProperty("class", "subtitle")
-        location_layout.addWidget(location_label)
-        
-        self.location_input = QLineEdit()
+        self.location_input = QLineEdit(os.path.abspath("downloads"))
         self.location_input.setPlaceholderText("Select download folder...")
-        self.location_input.setText(os.path.abspath("downloads"))
         
         self.browse_button = QPushButton("Browse")
         self.browse_button.setProperty("class", "secondary")
@@ -183,139 +174,64 @@ class DownloadOptionsWidget(QWidget):
         location_input_layout.addWidget(self.browse_button)
         location_layout.addLayout(location_input_layout)
         
-        layout.addWidget(location_frame)
-        
-        # Performance options
-        performance_frame = QFrame()
-        performance_frame.setProperty("class", "card")
-        performance_frame.setMinimumHeight(150)  # Set minimum height
-        performance_layout = QVBoxLayout(performance_frame)
+        main_layout.addWidget(location_group)
+
+        # --- Performance Group ---
+        performance_group = QGroupBox("Performance Settings")
+        performance_layout = QFormLayout(performance_group)
         performance_layout.setSpacing(12)
-        performance_layout.setContentsMargins(16, 16, 16, 16)  # Add margins
-        
-        perf_label = QLabel("Performance Settings")
-        perf_label.setProperty("class", "subtitle")
-        performance_layout.addWidget(perf_label)
-        
-        # Concurrent downloads
-        concurrent_layout = QHBoxLayout()
-        concurrent_label = QLabel("Concurrent Downloads:")
-        concurrent_label.setMinimumWidth(150)
-        
+
         self.concurrent_spin = QSpinBox()
-        self.concurrent_spin.setMinimum(1)
-        self.concurrent_spin.setMaximum(20)
+        self.concurrent_spin.setRange(1, 20)
         self.concurrent_spin.setValue(5)
         self.concurrent_spin.setSuffix(" threads")
-        self.concurrent_spin.setMinimumWidth(120)
-        
-        concurrent_layout.addWidget(concurrent_label)
-        concurrent_layout.addWidget(self.concurrent_spin)
-        concurrent_layout.addStretch()
-        
-        performance_layout.addLayout(concurrent_layout)
-        
-        concurrent_desc = QLabel("Higher values = faster downloads but more system load")
-        concurrent_desc.setProperty("class", "caption")
-        concurrent_desc.setStyleSheet("color: #94A3B8; font-size: 12px;")
-        performance_layout.addWidget(concurrent_desc)
-        
-        # Download speed slider (visual only, for user feedback)
-        speed_layout = QHBoxLayout()
-        speed_label = QLabel("Expected Speed:")
-        speed_label.setMinimumWidth(150)
-        
+        performance_layout.addRow("Concurrent Downloads:", self.concurrent_spin)
+
         self.speed_slider = QSlider(Qt.Orientation.Horizontal)
-        self.speed_slider.setMinimum(1)
-        self.speed_slider.setMaximum(10)
+        self.speed_slider.setRange(1, 10)
         self.speed_slider.setValue(5)
-        self.speed_slider.setMinimumWidth(200)
-        
         self.speed_value = QLabel("Normal")
-        self.speed_value.setMinimumWidth(80)
-        
-        # Connect slider to update label
         self.speed_slider.valueChanged.connect(self._update_speed_label)
         self.concurrent_spin.valueChanged.connect(self._update_speed_from_threads)
         
-        speed_layout.addWidget(speed_label)
-        speed_layout.addWidget(self.speed_slider, 1)
+        speed_layout = QHBoxLayout()
+        speed_layout.addWidget(self.speed_slider)
         speed_layout.addWidget(self.speed_value)
+        performance_layout.addRow("Expected Speed:", speed_layout)
         
-        performance_layout.addLayout(speed_layout)
+        main_layout.addWidget(performance_group)
         
-        layout.addWidget(performance_frame)
-        
-        # Advanced options
-        self._setup_advanced_options(layout)
-
-    def _setup_advanced_options(self, parent_layout):
-        """Set up advanced download options."""
-        advanced_frame = QFrame()
-        advanced_frame.setProperty("class", "card")
-        advanced_frame.setMinimumHeight(180)  # Set minimum height
-        advanced_layout = QVBoxLayout(advanced_frame)
+        # --- Advanced Group ---
+        advanced_group = QGroupBox("Advanced Options")
+        advanced_layout = QFormLayout(advanced_group)
         advanced_layout.setSpacing(12)
-        advanced_layout.setContentsMargins(16, 16, 16, 16)  # Add margins
-        
-        advanced_label = QLabel("Advanced Options")
-        advanced_label.setProperty("class", "subtitle")
-        advanced_layout.addWidget(advanced_label)
 
-        # Retry options
-        retry_layout = QHBoxLayout()
-        retry_label = QLabel("Retry Failed Downloads:")
-        retry_label.setMinimumWidth(150)
-        
         self.retry_spin = QSpinBox()
-        self.retry_spin.setMinimum(0)
-        self.retry_spin.setMaximum(10)
+        self.retry_spin.setRange(0, 10)
         self.retry_spin.setValue(3)
         self.retry_spin.setSuffix(" times")
-        self.retry_spin.setMinimumWidth(120)
-        
-        retry_layout.addWidget(retry_label)
-        retry_layout.addWidget(self.retry_spin)
-        retry_layout.addStretch()
-        
-        advanced_layout.addLayout(retry_layout)
+        advanced_layout.addRow("Retry Failed Downloads:", self.retry_spin)
 
-        # Timeout settings
-        timeout_layout = QHBoxLayout()
-        timeout_label = QLabel("Download Timeout:")
-        timeout_label.setMinimumWidth(150)
-        
         self.timeout_spin = QSpinBox()
-        self.timeout_spin.setMinimum(10)
-        self.timeout_spin.setMaximum(300)
+        self.timeout_spin.setRange(10, 300)
         self.timeout_spin.setValue(30)
         self.timeout_spin.setSuffix(" seconds")
-        self.timeout_spin.setMinimumWidth(120)
-        
-        timeout_layout.addWidget(timeout_label)
-        timeout_layout.addWidget(self.timeout_spin)
-        timeout_layout.addStretch()
-        
-        advanced_layout.addLayout(timeout_layout)
-        
-        # Overwrite existing files
+        advanced_layout.addRow("Download Timeout:", self.timeout_spin)
+
         self.overwrite_checkbox = QCheckBox("Overwrite existing files")
         self.overwrite_checkbox.setChecked(False)
-        advanced_layout.addWidget(self.overwrite_checkbox)
-        
-        parent_layout.addWidget(advanced_frame)
-    
+        advanced_layout.addRow(self.overwrite_checkbox)
+
+        main_layout.addWidget(advanced_group)
+        main_layout.addStretch()
+
     def _browse_location(self):
         """Browse for download location."""
         current_path = self.location_input.text() or os.path.abspath("downloads")
-        folder = QFileDialog.getExistingDirectory(
-            self, 
-            "Select Download Folder", 
-            current_path
-        )
+        folder = QFileDialog.getExistingDirectory(self, "Select Download Folder", current_path)
         if folder:
             self.location_input.setText(folder)
-    
+
     def _update_speed_label(self, value):
         """Update speed label based on slider value."""
         labels = {
@@ -324,13 +240,12 @@ class DownloadOptionsWidget(QWidget):
             9: "Very Fast", 10: "Maximum"
         }
         self.speed_value.setText(labels.get(value, "Normal"))
-    
+
     def _update_speed_from_threads(self, threads):
         """Update speed slider based on thread count."""
-        # Map thread count to speed slider value
         speed_value = min(10, max(1, threads // 2))
         self.speed_slider.setValue(speed_value)
-    
+
     def get_options(self) -> Dict[str, Any]:
         """Get all download options."""
         return {
