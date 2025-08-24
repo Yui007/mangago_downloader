@@ -281,11 +281,10 @@ class ChapterSelectionWidget(QWidget):
         
         layout.addWidget(tools_frame)
         
-        # Create a container widget for the table area
-        table_container = QWidget()
-        table_layout = QVBoxLayout(table_container)
-        table_layout.setContentsMargins(0, 0, 0, 0)
-        table_layout.setSpacing(0)
+        # Create a scroll area for the table
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(QFrame.Shape.NoFrame) # Remove scroll area border
         
         # Chapters table
         self.chapters_table = QTableWidget()
@@ -293,7 +292,7 @@ class ChapterSelectionWidget(QWidget):
         self.chapters_table.setHorizontalHeaderLabels(["Select", "Chapter", "Title"])
         
         # Set minimum height for the table to ensure visibility
-        self.chapters_table.setMinimumHeight(300)
+        self.chapters_table.setMinimumHeight(800)
         
         # Table styling
         header = self.chapters_table.horizontalHeader()
@@ -310,10 +309,10 @@ class ChapterSelectionWidget(QWidget):
         self.chapters_table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.chapters_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         
-        table_layout.addWidget(self.chapters_table)
-        
-        # Add table container to main layout with stretch factor
-        layout.addWidget(table_container, 1)  # The stretch factor 1 allows it to expand
+        scroll_area.setWidget(self.chapters_table)
+
+        # Add scroll area to main layout with stretch factor
+        layout.addWidget(scroll_area, 1)  # The stretch factor 1 allows it to expand
         
         # Empty state
         self._setup_empty_state()
@@ -341,9 +340,6 @@ class ChapterSelectionWidget(QWidget):
         empty_layout.addWidget(empty_icon)
         empty_layout.addWidget(empty_title)
         empty_layout.addWidget(empty_desc)
-        
-        # Set minimum height for empty state as well
-        self.empty_widget.setMinimumHeight(300)
         
         # Initially hide the table and show empty state
         self.chapters_table.setVisible(False)
