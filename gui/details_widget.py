@@ -198,6 +198,7 @@ class MangaInfoWidget(QWidget):
         """)
 
 
+
 class ChapterSelectionWidget(QWidget):
     """Widget for interactive chapter selection."""
     
@@ -280,10 +281,19 @@ class ChapterSelectionWidget(QWidget):
         
         layout.addWidget(tools_frame)
         
+        # Create a container widget for the table area
+        table_container = QWidget()
+        table_layout = QVBoxLayout(table_container)
+        table_layout.setContentsMargins(0, 0, 0, 0)
+        table_layout.setSpacing(0)
+        
         # Chapters table
         self.chapters_table = QTableWidget()
         self.chapters_table.setColumnCount(3)
         self.chapters_table.setHorizontalHeaderLabels(["Select", "Chapter", "Title"])
+        
+        # Set minimum height for the table to ensure visibility
+        self.chapters_table.setMinimumHeight(300)
         
         # Table styling
         header = self.chapters_table.horizontalHeader()
@@ -296,7 +306,14 @@ class ChapterSelectionWidget(QWidget):
         self.chapters_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.chapters_table.setAlternatingRowColors(True)
         
-        layout.addWidget(self.chapters_table, 1)
+        # Enable vertical scrollbar to handle overflow
+        self.chapters_table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.chapters_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        
+        table_layout.addWidget(self.chapters_table)
+        
+        # Add table container to main layout with stretch factor
+        layout.addWidget(table_container, 1)  # The stretch factor 1 allows it to expand
         
         # Empty state
         self._setup_empty_state()
@@ -324,6 +341,9 @@ class ChapterSelectionWidget(QWidget):
         empty_layout.addWidget(empty_icon)
         empty_layout.addWidget(empty_title)
         empty_layout.addWidget(empty_desc)
+        
+        # Set minimum height for empty state as well
+        self.empty_widget.setMinimumHeight(300)
         
         # Initially hide the table and show empty state
         self.chapters_table.setVisible(False)
@@ -367,6 +387,9 @@ class ChapterSelectionWidget(QWidget):
             # Chapter title
             title_item = QTableWidgetItem(chapter.title or "Untitled")
             self.chapters_table.setItem(i, 2, title_item)
+        
+        # Auto-resize rows to content
+        self.chapters_table.resizeRowsToContents()
         
         self._update_selection_count()
     
@@ -472,12 +495,19 @@ class DetailsWidget(QWidget):
         selection_frame = QFrame()
         selection_frame.setProperty("class", "card")
         selection_layout = QVBoxLayout(selection_frame)
+        selection_layout.setContentsMargins(0, 0, 0, 0)  # Remove margins to give more space
         selection_layout.addWidget(self.chapter_selection)
         
-        # Add to splitter
+        # Add to splitter with proper sizing
         splitter.addWidget(info_frame)
         splitter.addWidget(selection_frame)
-        splitter.setStretchFactor(1, 1) # Allow chapter selection to expand
+        
+        # Set splitter proportions: 1/3 for info, 2/3 for chapters
+        splitter.setStretchFactor(0, 1)  # Manga info
+        splitter.setStretchFactor(1, 2)  # Chapter selection gets more space
+        
+        # Set initial sizes
+        splitter.setSizes([300, 600])  # Initial heights in pixels
         
         layout.addWidget(splitter)
         
