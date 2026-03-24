@@ -260,87 +260,90 @@ def fetch_chapter_image_urls(chapter_url: str) -> List[str]:
                     # If issues arise, they should be addressed separately.
                     pass
 
-                # Handling for manga URLs on mangago.me
-                if is_manga_mangago:
-                    is_manhwa_uu_url = "/uu/" in chapter_url and "pg-" in chapter_url
-                    is_manhwa_mh_url = "/mh/" in chapter_url and "/c" in chapter_url
+                is_manhwa_uu_url = "/uu/" in chapter_url and "pg-" in chapter_url
+                is_manhwa_mh_url = "/mh/" in chapter_url and "/c" in chapter_url
 
-                    if is_manhwa_uu_url or is_manhwa_mh_url:
-                        page_num = 1
-                        base_url = chapter_url
+                if is_manhwa_uu_url or is_manhwa_mh_url:
+                    page_num = 1
+                    base_url = chapter_url
 
-                        # Determine the base URL and starting page number
+                    # Determine the base URL and starting page number
+                    if is_manhwa_uu_url:
+                        match = re.search(r"(.*/pg-)\d+", chapter_url)
+                        if match:
+                            base_url = match.group(1)
+                        pg_match = re.search(r"pg-(\d+)", chapter_url)
+                        if pg_match:
+                            page_num = int(pg_match.group(1))
+                    elif is_manhwa_mh_url:
+                        # For /mh/ URLs, the base is up to the chapter
+                        match = re.search(r"(.*/c\d+/)", chapter_url)
+                        if match:
+                            base_url = match.group(1)
+                        pg_match = re.search(r"/c\d+/(\d+)", chapter_url)
+                        if pg_match:
+                            page_num = int(pg_match.group(1))
+
+                    while True:
+                        current_url = ""
+                        # Construct the URL for the current page
                         if is_manhwa_uu_url:
-                            match = re.search(r"(.*/pg-)\d+", chapter_url)
-                            if match:
-                                base_url = match.group(1)
-                            pg_match = re.search(r"pg-(\d+)", chapter_url)
-                            if pg_match:
-                                page_num = int(pg_match.group(1))
+                            current_url = f"{base_url}{page_num}/"
                         elif is_manhwa_mh_url:
-                            # For /mh/ URLs, the base is up to the chapter
-                            match = re.search(r"(.*/c\d+/)", chapter_url)
-                            if match:
-                                base_url = match.group(1)
-                            pg_match = re.search(r"/c\d+/(\d+)", chapter_url)
-                            if pg_match:
-                                page_num = int(pg_match.group(1))
+                            if page_num == 1 and not re.search(r"/c\d+/\d+", base_url):
+                                 current_url = base_url
+                            else:
+                                 current_url = f"{base_url}{page_num}/"
 
-                        while True:
-                            current_url = ""
-                            # Construct the URL for the current page
-                            if is_manhwa_uu_url:
-                                current_url = f"{base_url}{page_num}/"
-                            elif is_manhwa_mh_url:
-                                if page_num == 1 and not re.search(r"/c\d+/\d+", base_url):
-                                     current_url = base_url
-                                else:
-                                     current_url = f"{base_url}{page_num}/"
+                        if not current_url:
+                            break
 
-                            if not current_url:
-                                break
+                        try:
+                            if driver.current_url != current_url:
+                                driver.get(current_url)
 
-                            try:
-                                if driver.current_url != current_url:
-                                    driver.get(current_url)
+                            img_selector = f"img#page{page_num}, img.page{page_num}"
+                            img = WebDriverWait(driver, 10).until(
+                                EC.presence_of_element_located((By.CSS_SELECTOR, img_selector))
+                            )
+                            img_url = img.get_attribute("src")
+                            if img_url:
+                                img_urls.append(img_url)
 
-                                img_selector = f"img#page{page_num}, img.page{page_num}"
-                                img = WebDriverWait(driver, 10).until(
-                                    EC.presence_of_element_located((By.CSS_SELECTOR, img_selector))
-                                )
-                                img_url = img.get_attribute("src")
-                                if img_url:
-                                    img_urls.append(img_url)
+                            page_num += 1
 
-                                page_num += 1
-
-                            except TimeoutException:
-                                print(f"No more pages or image not found for {current_url}.")
-                                break
-                            except Exception as e:
-                                print(f"Error on page {page_num} of {chapter_url}: {e}")
-                                break
+                        except TimeoutException:
+                            break
+                        except Exception as e:
+                            break
                 else:
                     # Original logic for other regular manga/manhwa (non-mh/uu/cXXX)
                     # This implies it uses .multi_pg_tip.left for total_pages
                     # and appends /i/
-                    page_info_element = WebDriverWait(driver, 10).until(
-                        EC.presence_of_element_located((By.CSS_SELECTOR, ".multi_pg_tip.left"))
-                    )
-                    page_info = page_info_element.text
-                    total_pages = int(page_info.split("/")[-1].replace(")", ""))
+                    try:
+                        page_info_element = WebDriverWait(driver, 10).until(
+                            EC.presence_of_element_located((By.CSS_SELECTOR, ".multi_pg_tip.left"))
+                        )
+                        page_info = page_info_element.text
+                        total_pages = int(page_info.split("/")[-1].replace(")", ""))
+                    except Exception as e:
+                        # Fallback if pages can't be fetched
+                        total_pages = 1
 
                     for i in range(1, total_pages + 1):
                         url = chapter_url if i == 1 else f"{chapter_url.rstrip('/')}/{i}/"
                         if driver.current_url != url:
                             driver.get(url)
 
-                        img = WebDriverWait(driver, 10).until(
-                            EC.presence_of_element_located((By.CSS_SELECTOR, f"img#page{i}"))
-                        )
-                        img_url = img.get_attribute("src")
-                        if img_url:
-                            img_urls.append(img_url)
+                        try:
+                            img = WebDriverWait(driver, 10).until(
+                                EC.presence_of_element_located((By.CSS_SELECTOR, f"img#page{i}"))
+                            )
+                            img_url = img.get_attribute("src")
+                            if img_url:
+                                img_urls.append(img_url)
+                        except Exception:
+                            continue
             
             return img_urls
         finally:
