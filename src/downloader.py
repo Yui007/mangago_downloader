@@ -159,7 +159,7 @@ def fetch_chapter_image_urls(chapter_url: str) -> List[str]:
                     if not href:
                         href = next_el.get_attribute("href") or next_el.get_attribute("data-href")
                     if not href:
-                        print("✅ No next link visible. Finished chapter subpages.")
+                        print("No next link visible. Finished chapter subpages.")
                         break
 
                     current_chapter_id = extract_chapter_id(driver.current_url)
@@ -167,10 +167,10 @@ def fetch_chapter_image_urls(chapter_url: str) -> List[str]:
                     next_chapter_id = extract_chapter_id(next_url)
 
                     if current_chapter_id and next_chapter_id and current_chapter_id != next_chapter_id:
-                        print(f"🛑 Next page is a new chapter ({next_chapter_id}). Stopping image collection for current chapter.")
+                        print(f"Next page is a new chapter ({next_chapter_id}). Stopping image collection for current chapter.")
                         break
 
-                    print(f"➡️ Navigating to next subpage: {next_url}")
+                    print(f"Navigating to next subpage: {next_url}")
                     current_url = next_url # Update current_url for next iteration
                     subpage_idx += 1
                     
@@ -181,16 +181,16 @@ def fetch_chapter_image_urls(chapter_url: str) -> List[str]:
                     driver.execute_script("window.scrollTo(0, 0);")
 
                 except NoSuchElementException:
-                    print("✅ No more next subpages. Finished chapter.")
+                    print("No more next subpages. Finished chapter.")
                     break
                 except TimeoutException:
-                    print("⚠️ Timeout while moving to next subpage; stopping image collection.")
+                    print("Timeout while moving to next subpage; stopping image collection.")
                     break
                 except Exception as e:
-                    print(f"❌ An error occurred during subpage navigation: {e}")
+                    print(f"An error occurred during subpage navigation: {e}")
                     break # Break on unexpected errors
 
-            return img_urls
+            return list(dict.fromkeys(img_urls))
         finally:
             if driver:
                 driver.quit()
@@ -345,7 +345,7 @@ def fetch_chapter_image_urls(chapter_url: str) -> List[str]:
                         except Exception:
                             continue
             
-            return img_urls
+            return list(dict.fromkeys(img_urls))
         finally:
             driver.quit()
 
@@ -358,40 +358,8 @@ def get_chapter_list(driver: webdriver.Chrome) -> List[Chapter]:
     """
     parsed_url = urlparse(driver.current_url)
     domain = parsed_url.netloc
-    
-    chapters = []
-    
-    if domain in ["www.youhim.me", "www.mangago.zone"]:
-        # For these domains, assume a simpler structure for chapter links.
-        # This is a generic approach; might need refinement based on actual HTML.
-        soup = BeautifulSoup(driver.page_source, 'html.parser')
-        
-        # Look for common chapter link patterns
-        # Example: <a> tags within a div or ul that might contain "chapter" in their href
-        chapter_links = soup.find_all('a', href=re.compile(r'/chapter/\d+/\d+/'))
-        
-        for link in chapter_links:
-            title = link.get_text(strip=True)
-            url = link.get('href')
 
-            if url and not url.startswith('http'):
-                url = urljoin(driver.current_url, url)
-
-            # Try to extract chapter number from title or URL
-            number = 0
-            match_title = re.search(r'Chapter\s*(\d+(\.\d+)?)', title, re.IGNORECASE)
-            match_url = re.search(r'/chapter/\d+/(\d+)/', url)
-
-            if match_title:
-                number = float(match_title.group(1))
-            elif match_url:
-                number = float(match_url.group(1))
-            
-            if url and title:
-                chapters.append(Chapter(number=int(number), title=title, url=url))
-        
-    else:
-        # Existing logic for other domains (e.g., mangago.me)
+    if domain not in ["www.youhim.me", "www.mangago.zone"]:
         try:
             # Look for the "show all chapters" button
             show_all_button = WebDriverWait(driver, 5).until(
@@ -401,34 +369,59 @@ def get_chapter_list(driver: webdriver.Chrome) -> List[Chapter]:
             show_all_button.click()
             # Wait a bit for the page to update
             time.sleep(2)
-        except TimeoutException:
+        except Exception:
             # No "show all chapters" button found, proceed with existing chapters
             pass
-        except Exception as e:
-            # Some other error occurred, but we'll continue anyway
-            pass
-        
-        soup = BeautifulSoup(driver.page_source, 'html.parser')
-        chapter_table = soup.find('table', class_='listing')
-        if not isinstance(chapter_table, Tag):
-            raise DownloadError("Could not find chapter table.")
-        
-        for row in chapter_table.find_all('tr'):
-            link = row.find('a', class_='chico')
-            if not link:
-                continue
 
-            title = link.get_text(strip=True)
-            url = link.get('href')
+    soup = BeautifulSoup(driver.page_source, 'html.parser')
+    chapter_table = soup.find('table', class_='listing')
+    if not isinstance(chapter_table, Tag):
+        raise DownloadError("Could not find chapter table.")
 
-            if url and not url.startswith('http'):
-                url = urljoin(driver.current_url, url)
+    chapters = []
+    seen_urls = set()
+    for row in chapter_table.find_all('tr'):
+        link = row.find('a', class_='chico')
+        if not link:
+            continue
 
-            match = re.search(r'Ch\.(\d+(\.\d+)?)', title)
-            number = float(match.group(1)) if match else 0
-            
-            chapters.append(Chapter(number=int(number), title=title, url=url))
-    
+        title = link.get_text(strip=True)
+        url = link.get('href')
+        if not isinstance(url, str) or not url:
+            continue
+        if not url.startswith('http'):
+            url = urljoin(driver.current_url, url)
+        if url in seen_urls:
+            continue
+        seen_urls.add(url)
+
+        match = re.search(r'(?:Ch\.?|Chapter)\s*(\d+(?:\.\d+)?)', title, re.IGNORECASE)
+        if not match:
+            # Handles titles like "afterword.30.5"
+            match = re.search(r'(\d+(?:\.\d+)?)', title)
+
+        number = float(match.group(1)) if match else None
+        if number is not None and number.is_integer():
+            number = int(number)
+        chapters.append(Chapter(number=number, title=title, url=url))
+
+    # The table is newest-first; reverse it so index 1 is the oldest chapter.
+    chapters.reverse()
+
+    # Titles without a number (e.g. "Special.") get a unique number between their neighbours.
+    previous_number = 0
+    for index, chapter in enumerate(chapters):
+        if chapter.number is None:
+            next_number = next(
+                (ch.number for ch in chapters[index + 1:] if ch.number is not None),
+                None
+            )
+            if next_number is not None and next_number > previous_number:
+                chapter.number = (previous_number + next_number) / 2
+            else:
+                chapter.number = previous_number + 0.5
+        previous_number = chapter.number
+
     return sorted(chapters, key=lambda ch: ch.number)
 
 

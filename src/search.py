@@ -144,7 +144,19 @@ def get_manga_details(manga_url: str) -> Tuple[Manga, webdriver.Chrome]:
 
 
 def _parse_manga_details(soup: BeautifulSoup, manga_url: str) -> Manga:
-    title = (title_elem.get_text(strip=True) if (title_elem := soup.find('h1')) else "Unknown Title")
+    title = (title_elem.get_text(strip=True) if (title_elem := soup.find('h1')) else "")
+
+    # Some domains (youhim.me, mangago.zone) leave <h1> empty and expose the slug in JS.
+    if not title:
+        for script in soup.find_all("script"):
+            mid_match = re.search(r'var mid="([^"]+)"', script.get_text())
+            if mid_match:
+                title = mid_match.group(1).replace("_", " ").title()
+                break
+    if not title:
+        slug = urlparse(manga_url).path.strip("/").split("/")[-1]
+        title = slug.replace("_", " ").title() if slug else "Unknown Title"
+
     manga = Manga(title=title, url=manga_url)
 
     # Cover Image
