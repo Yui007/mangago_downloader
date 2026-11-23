@@ -58,8 +58,11 @@ def main():
                         search_results = search_manga(manga_title, page=page)
                     
                     if not search_results:
-                        console.print("[yellow]No more results found.[/yellow]")
-                        page = max(1, page - 1)
+                        if page == 1:
+                            console.print(f"[yellow]No results found for '{manga_title}'.[/yellow]")
+                            break
+                        console.print("[yellow]No more results found. Returning to previous page.[/yellow]")
+                        page -= 1
                         continue
 
                     table = Table(title=f"Search Results - Page {page}")
@@ -108,6 +111,9 @@ def main():
                 with console.status("[bold green]Fetching manga details...", spinner="dots"):
                     manga, driver = get_manga_details(manga_url)
 
+            if not manga:
+                continue
+
             if driver:
                 with console.status("[bold green]Fetching chapter list...", spinner="dots"):
                     chapters = get_chapter_list(driver)
@@ -138,18 +144,20 @@ def main():
             elif dl_choice == "2":
                 start = IntPrompt.ask("[bold green]Enter start chapter index[/bold green]")
                 end = IntPrompt.ask("[bold green]Enter end chapter index[/bold green]")
-                try:
-                    selected_chapters = chapters[start-1:end]
-                except (ValueError, IndexError):
-                     console.print("[yellow]Invalid chapter index range.[/yellow]")
-                     continue
+                if not (1 <= start <= end <= len(chapters)):
+                    console.print(
+                        f"[yellow]Invalid chapter index range. Please enter values between 1 and {len(chapters)} with start <= end.[/yellow]"
+                    )
+                    continue
+                selected_chapters = chapters[start - 1:end]
             elif dl_choice == "3":
                 chapter_idx = IntPrompt.ask("[bold green]Enter chapter index[/bold green]")
-                try:
-                    selected_chapters = [chapters[chapter_idx-1]]
-                except (ValueError, IndexError):
-                    console.print("[yellow]Invalid chapter index.[/yellow]")
+                if not (1 <= chapter_idx <= len(chapters)):
+                    console.print(
+                        f"[yellow]Invalid chapter index. Please enter a value between 1 and {len(chapters)}.[/yellow]"
+                    )
                     continue
+                selected_chapters = [chapters[chapter_idx - 1]]
             
             if not selected_chapters:
                 console.print("[yellow]No chapters selected for download.[/yellow]")
@@ -194,11 +202,18 @@ def main():
                         console.print(f"[red]  - Chapter {res.chapter.number}: {res.error_message}[/red]")
             
             if format_choice in ["pdf", "cbz"] and successful:
-                console.print(f"\n[bold blue]Converting to {format_choice.upper()}...[/bold blue]")
-                with console.status("[bold green]Converting chapters...", spinner="dots"):
-                    manga_dir = os.path.join("downloads", sanitize_filename(manga.title))
-                    created_files = convert_manga_chapters(manga_dir, format_choice, delete_images)
-                    console.print(f"[bold green]Successfully converted {len(created_files)} chapters.[/bold green]")
+                downloaded_chapter_dirs = [r.file_path for r in successful if r.file_path]
+                if downloaded_chapter_dirs:
+                    console.print(f"\n[bold blue]Converting to {format_choice.upper()}...[/bold blue]")
+                    with console.status("[bold green]Converting chapters...", spinner="dots"):
+                        manga_dir = os.path.join("downloads", sanitize_filename(manga.title))
+                        created_files = convert_manga_chapters(
+                            manga_dir,
+                            format_choice,
+                            delete_images,
+                            chapter_dirs=downloaded_chapter_dirs,
+                        )
+                        console.print(f"[bold green]Successfully converted {len(created_files)} chapters.[/bold green]")
             elif format_choice == "none":
                 console.print("\n[bold blue]Skipping conversion. Images saved.[/bold blue]")
 

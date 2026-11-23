@@ -1,6 +1,7 @@
 """
 Downloader engine with threading support for the Mangago Downloader.
 """
+import hashlib
 import os
 import re
 import threading
@@ -23,6 +24,19 @@ from .models import Chapter, Manga, DownloadResult
 from .utils import SessionManager, NetworkError, ParsingError, DownloadError, create_directory, sanitize_filename
 
 
+def _build_chapter_dir_name(chapter: Chapter) -> str:
+    """Build a clean, deterministic, collision-resistant directory name for a chapter."""
+    parts = [f"Chapter_{chapter.number}"]
+    if chapter.title:
+        safe_title = sanitize_filename(re.sub(r"\s+", "_", chapter.title.strip())).strip("._ ")
+        if safe_title:
+            parts.append(safe_title[:80])
+    if chapter.url:
+        url_hash = hashlib.sha1(chapter.url.encode("utf-8")).hexdigest()[:8]
+        parts.append(url_hash)
+    return sanitize_filename("_".join(parts)).rstrip(". ")
+
+
 class ChapterDownloader:
     """
     Handles downloading of manga chapters with threading support.
@@ -40,7 +54,7 @@ class ChapterDownloader:
         manga_dir = os.path.join(self.download_dir, sanitize_filename(manga.title))
         create_directory(manga_dir)
         
-        chapter_dir = os.path.join(manga_dir, f"Chapter_{chapter.number}")
+        chapter_dir = os.path.join(manga_dir, _build_chapter_dir_name(chapter))
         create_directory(chapter_dir)
         
         downloaded_count = 0
@@ -50,6 +64,15 @@ class ChapterDownloader:
             if self._download_image(image_url, image_path, chapter.url): # Pass chapter.url as referer
                 downloaded_count += 1
         
+        if downloaded_count == 0:
+            return DownloadResult(
+                chapter=chapter,
+                success=False,
+                file_path=chapter_dir,
+                error_message="Failed to download any images for this chapter.",
+                images_downloaded=0,
+            )
+
         return DownloadResult(
             chapter=chapter,
             success=True,
@@ -98,17 +121,15 @@ class ChapterDownloader:
 
 def _replace_page_number_manhwa(url: str, page_number: int) -> str:
     """
-    Replace the page number in a manhwa URL.
+    Replace the page number in a pg-N paginated URL.
     
     Args:
-        url (str): The original manhwa URL
+        url (str): The original chapter URL
         page_number (int): The new page number
         
     Returns:
         str: The URL with the updated page number
     """
-    import re
-    # Replace pg-X with pg-page_number
     return re.sub(r'pg-\d+', f'pg-{page_number}', url)
 
 def extract_chapter_id(url):
@@ -209,7 +230,11 @@ def fetch_chapter_image_urls(chapter_url: str) -> List[str]:
             driver.get(chapter_url)
             
             # Check if this is a vertical longstrip manhwa URL (pattern: /chapter/id1/id2/)
-            is_vertical_longstrip = "/chapter/" in chapter_url and len(chapter_url.split("/")) >= 6
+            is_vertical_longstrip = (
+                "/chapter/" in chapter_url
+                and len(chapter_url.split("/")) >= 6
+                and not re.search(r"pg-\d+", chapter_url)
+            )
             
             if is_vertical_longstrip:
                 # For vertical longstrip manhwa, fetch all images on the single page
@@ -260,18 +285,15 @@ def fetch_chapter_image_urls(chapter_url: str) -> List[str]:
                     # If issues arise, they should be addressed separately.
                     pass
 
-                is_manhwa_uu_url = "/uu/" in chapter_url and "pg-" in chapter_url
+                is_pg_url = bool(re.search(r"pg-\d+", chapter_url))
                 is_manhwa_mh_url = "/mh/" in chapter_url and "/c" in chapter_url
 
-                if is_manhwa_uu_url or is_manhwa_mh_url:
+                if is_pg_url or is_manhwa_mh_url:
                     page_num = 1
                     base_url = chapter_url
 
                     # Determine the base URL and starting page number
-                    if is_manhwa_uu_url:
-                        match = re.search(r"(.*/pg-)\d+", chapter_url)
-                        if match:
-                            base_url = match.group(1)
+                    if is_pg_url:
                         pg_match = re.search(r"pg-(\d+)", chapter_url)
                         if pg_match:
                             page_num = int(pg_match.group(1))
@@ -287,8 +309,8 @@ def fetch_chapter_image_urls(chapter_url: str) -> List[str]:
                     while True:
                         current_url = ""
                         # Construct the URL for the current page
-                        if is_manhwa_uu_url:
-                            current_url = f"{base_url}{page_num}/"
+                        if is_pg_url:
+                            current_url = _replace_page_number_manhwa(chapter_url, page_num)
                         elif is_manhwa_mh_url:
                             if page_num == 1 and not re.search(r"/c\d+/\d+", base_url):
                                  current_url = base_url
@@ -422,7 +444,7 @@ def get_chapter_list(driver: webdriver.Chrome) -> List[Chapter]:
                 chapter.number = previous_number + 0.5
         previous_number = chapter.number
 
-    return sorted(chapters, key=lambda ch: ch.number)
+    return chapters
 
 
 def close_driver(driver: webdriver.Chrome):
@@ -435,7 +457,6 @@ def close_driver(driver: webdriver.Chrome):
 
 def init_driver():
     options = webdriver.ChromeOptions()
-    options.add_argument("--non-headless=new")
     options.page_load_strategy = "eager"
     options.add_argument("--log-level=3")
     options.add_experimental_option("excludeSwitches", ["enable-logging"])

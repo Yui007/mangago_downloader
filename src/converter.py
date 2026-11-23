@@ -24,15 +24,13 @@ def convert_to_pdf(
             print(f"No images found in {chapter_dir}")
             return None
         
-        image_files.sort()
-        
         if not output_path:
-            chapter_name = os.path.basename(chapter_dir)
+            chapter_name = os.path.basename(os.path.normpath(chapter_dir))
             output_path = os.path.join(chapter_dir, f"{chapter_name}.pdf")
         
-        # By passing the raw image data, img2pdf avoids re-encoding and preserves quality.
+        # Pass file paths directly so img2pdf manages file handles cleanly without re-encoding.
         with open(output_path, "wb") as f:
-            f.write(img2pdf.convert([open(i, "rb").read() for i in image_files]))
+            f.write(img2pdf.convert(image_files))
         
         if delete_images:
             for image_file in image_files:
@@ -61,10 +59,8 @@ def convert_to_cbz(
             print(f"No images found in {chapter_dir}")
             return None
         
-        image_files.sort()
-        
         if not output_path:
-            chapter_name = os.path.basename(chapter_dir)
+            chapter_name = os.path.basename(os.path.normpath(chapter_dir))
             output_path = os.path.join(chapter_dir, f"{chapter_name}.cbz")
         
         with zipfile.ZipFile(output_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
@@ -88,22 +84,47 @@ def convert_to_cbz(
 def convert_manga_chapters(
     manga_dir: str,
     format: str = "pdf",
-    delete_images: bool = False
+    delete_images: bool = False,
+    chapter_dirs: Optional[List[str]] = None
 ) -> List[str]:
     """
-    Convert all chapters of a manga to the specified format.
+    Convert chapters of a manga to the specified format.
+    If chapter_dirs is provided, only convert those chapter directories.
+    Otherwise, convert all chapter subdirectories under manga_dir.
     """
     created_files = []
-    
-    try:
-        chapter_dirs = [os.path.join(manga_dir, item) for item in os.listdir(manga_dir) if os.path.isdir(os.path.join(manga_dir, item))]
-    except FileNotFoundError:
-        print(f"Error: Manga directory not found at {manga_dir}")
-        return []
-    
-    chapter_dirs.sort()
-    
-    for chapter_dir in chapter_dirs:
+
+    if chapter_dirs is None:
+        try:
+            target_dirs = [
+                os.path.join(manga_dir, item)
+                for item in os.listdir(manga_dir)
+                if os.path.isdir(os.path.join(manga_dir, item))
+            ]
+        except FileNotFoundError:
+            print(f"Error: Manga directory not found at {manga_dir}")
+            return []
+        target_dirs.sort()
+    else:
+        target_dirs = []
+        seen = set()
+        for chapter_dir in chapter_dirs:
+            if not chapter_dir:
+                continue
+            resolved = chapter_dir
+            if not os.path.isdir(resolved) and manga_dir:
+                candidate = os.path.join(manga_dir, chapter_dir)
+                if os.path.isdir(candidate):
+                    resolved = candidate
+            if not os.path.isdir(resolved):
+                print(f"Warning: Chapter directory not found at {chapter_dir}")
+                continue
+            norm = os.path.normpath(os.path.abspath(resolved))
+            if norm not in seen:
+                seen.add(norm)
+                target_dirs.append(resolved)
+
+    for chapter_dir in target_dirs:
         try:
             if format.lower() == "pdf":
                 output_file = convert_to_pdf(chapter_dir, delete_images=delete_images)
@@ -115,11 +136,20 @@ def convert_manga_chapters(
             
             if output_file:
                 created_files.append(output_file)
-                print(f"Converted {os.path.basename(chapter_dir)} to {os.path.basename(output_file)}")
+                print(f"Converted {os.path.basename(os.path.normpath(chapter_dir))} to {os.path.basename(output_file)}")
         except Exception as e:
-            print(f"Error converting {os.path.basename(chapter_dir)}: {e}")
+            print(f"Error converting {os.path.basename(os.path.normpath(chapter_dir))}: {e}")
     
     return created_files
+
+
+def _image_sort_key(filepath: str):
+    """Sort key that orders numeric stems numerically, with non-numeric stems after."""
+    stem = os.path.splitext(os.path.basename(filepath))[0]
+    try:
+        return (0, int(stem), stem)
+    except ValueError:
+        return (1, 0, stem)
 
 
 def _get_image_files(directory: str) -> List[str]:
@@ -137,6 +167,6 @@ def _get_image_files(directory: str) -> List[str]:
         print(f"Directory not found: {directory}")
 
     # Sort numerically based on filename (e.g., 1.jpg, 2.jpg, 10.jpg)
-    image_files.sort(key=lambda f: int(os.path.splitext(os.path.basename(f))[0]))
+    image_files.sort(key=_image_sort_key)
     
     return image_files
